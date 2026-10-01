@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
 import { TaskList, Task, FilterStatus } from '../types/index.js';
@@ -9,6 +9,7 @@ import { TaskItem } from '../components/TaskItem.js';
 import { BulkInputModal } from '../components/BulkInputModal.js';
 import { EditListModal } from '../components/EditListModal.js';
 import { ConfirmModal } from '../components/ConfirmModal.js';
+import { RandomTaskModal } from '../components/RandomTaskModal.js';
 import {
   ArrowLeft,
   Plus,
@@ -21,10 +22,12 @@ import {
   Sparkles,
   ListFilter,
   CheckSquare,
+  Dices,
 } from 'lucide-react';
 
 export const ListDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const [list, setList] = useState<TaskList | null>(null);
@@ -40,6 +43,7 @@ export const ListDetail: React.FC = () => {
   // Modals
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [randomModalOpen, setRandomModalOpen] = useState(false);
   const [deleteTaskTarget, setDeleteTaskTarget] = useState<string | null>(null);
   const [confirmDeleteList, setConfirmDeleteList] = useState(false);
   const [confirmClearCompleted, setConfirmClearCompleted] = useState(false);
@@ -52,6 +56,9 @@ export const ListDetail: React.FC = () => {
       const data = await api.getListById(id);
       setList(data);
       setTasks(data.tasks || []);
+      if (searchParams.get('randomize') === 'true') {
+        setRandomModalOpen(true);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load task list details.');
     } finally {
@@ -297,6 +304,17 @@ export const ListDetail: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => setRandomModalOpen(true)}
+                disabled={tasks.length === 0}
+                title="Pick a random task to focus on"
+                className="px-3 py-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800/80 rounded-xl transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+              >
+                <Dices className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>Random Task</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setConfirmDeleteList(true)}
                 title="Delete this task list"
                 className="p-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition text-xs flex items-center gap-1"
@@ -349,16 +367,28 @@ export const ListDetail: React.FC = () => {
             </button>
           </form>
 
-          {/* Action Bar: Bulk Paste & Clear completed */}
+          {/* Action Bar: Bulk Paste, Randomize & Clear completed */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-            <button
-              type="button"
-              onClick={() => setBulkModalOpen(true)}
-              className="px-3.5 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-xl transition flex items-center gap-2 border border-blue-200 dark:border-blue-900/50"
-            >
-              <Layers className="w-4 h-4" />
-              <span>Paste Multiple Tasks (Bulk Input)</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkModalOpen(true)}
+                className="px-3.5 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-xl transition flex items-center gap-2 border border-blue-200 dark:border-blue-900/50"
+              >
+                <Layers className="w-4 h-4" />
+                <span>Paste Multiple Tasks (Bulk Input)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRandomModalOpen(true)}
+                disabled={tasks.length === 0}
+                className="px-3.5 py-2 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50 rounded-xl transition flex items-center gap-2 border border-purple-200 dark:border-purple-900/50 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Dices className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>Randomize (Pick 1 Task)</span>
+              </button>
+            </div>
 
             {progressStats.completed > 0 && (
               <button
@@ -470,6 +500,15 @@ export const ListDetail: React.FC = () => {
         onClose={() => setBulkModalOpen(false)}
         onAdd={handleBulkAdd}
         listTitle={list.title}
+      />
+
+      {/* Random Task Picker Modal */}
+      <RandomTaskModal
+        isOpen={randomModalOpen}
+        onClose={() => setRandomModalOpen(false)}
+        tasks={tasks}
+        listTitle={list.title}
+        onToggleTask={handleToggleTask}
       />
 
       {/* Edit List Modal */}

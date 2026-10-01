@@ -9,6 +9,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Calendar,
+  Dices,
 } from 'lucide-react';
 
 interface ListCardProps {
@@ -67,6 +68,14 @@ export const ListCard: React.FC<ListCardProps> = ({ list, onEdit, onDelete }) =>
                   onClick={() => setMenuOpen(false)}
                 />
                 <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl z-30 py-1 text-xs">
+                  <Link
+                    to={`/list/${list._id}?randomize=true`}
+                    onClick={() => setMenuOpen(false)}
+                    className="w-full px-3 py-2 text-left flex items-center gap-2 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition"
+                  >
+                    <Dices className="w-3.5 h-3.5" />
+                    Pick Random Task
+                  </Link>
                   <button
                     type="button"
                     onClick={() => {
