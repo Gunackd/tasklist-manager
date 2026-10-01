@@ -79,7 +79,7 @@ export const ListCard: React.FC<ListCardProps> = ({
       <div>
         {/* Top Header & Actions Menu */}
         <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             {draggable && (
               <span
                 className="cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-0.5 rounded transition"
@@ -91,8 +91,19 @@ export const ListCard: React.FC<ListCardProps> = ({
             <Link
               to={`/list/${list._id}`}
               className="text-lg font-bold text-zinc-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1 truncate"
+              title={list.title}
             >
               {list.title}
+            </Link>
+
+            {/* Randomize Button directly next to task list name */}
+            <Link
+              to={`/list/${list._id}?randomize=true`}
+              title="Pick a random task from this list"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800/80 transition-colors shrink-0 shadow-2xs"
+            >
+              <Dices className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              <span>Random</span>
             </Link>
           </div>
 
