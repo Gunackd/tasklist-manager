@@ -21,6 +21,7 @@ export interface TaskListDoc {
   title: string;
   description?: string;
   color?: string;
+  order?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -108,6 +109,7 @@ const MTaskListSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, default: '' },
   color: { type: String, default: 'blue' },
+  order: { type: Number, default: 0 },
 }, { timestamps: true });
 
 const MTaskSchema = new mongoose.Schema({
@@ -241,12 +243,17 @@ export const db = {
   taskLists: {
     async findByUserId(userId: string): Promise<TaskListDoc[]> {
       if (isMongoConnected) {
-        const docs = await MTaskList.find({ userId }).sort({ createdAt: -1 }).lean();
+        const docs = await MTaskList.find({ userId }).sort({ order: 1, createdAt: -1 }).lean();
         return docs.map(d => ({ ...d, _id: d._id.toString() })) as unknown as TaskListDoc[];
       }
       return memoryDb.taskLists
         .filter(l => l.userId === userId)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .sort((a, b) => {
+          const orderA = a.order ?? 0;
+          const orderB = b.order ?? 0;
+          if (orderA !== orderB) return orderA - orderB;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
     },
 
     async findById(id: string): Promise<TaskListDoc | null> {
@@ -258,26 +265,58 @@ export const db = {
       return memoryDb.taskLists.find(l => l._id === id) || null;
     },
 
-    async create(listData: { userId: string; title: string; description?: string; color?: string }): Promise<TaskListDoc> {
+    async create(listData: { userId: string; title: string; description?: string; color?: string; order?: number }): Promise<TaskListDoc> {
       const now = new Date().toISOString();
       if (isMongoConnected) {
-        const created = await MTaskList.create(listData);
+        const count = await MTaskList.countDocuments({ userId: listData.userId });
+        const created = await MTaskList.create({
+          ...listData,
+          order: listData.order ?? count,
+        });
         const doc = created.toObject();
         return { ...doc, _id: doc._id.toString() } as unknown as TaskListDoc;
       }
 
+      const userLists = memoryDb.taskLists.filter(l => l.userId === listData.userId);
       const newList: TaskListDoc = {
         _id: `list_${crypto.randomUUID()}`,
         userId: listData.userId,
         title: listData.title,
         description: listData.description || '',
         color: listData.color || 'blue',
+        order: listData.order ?? userLists.length,
         createdAt: now,
         updatedAt: now,
       };
       memoryDb.taskLists.push(newList);
       saveLocalDb();
       return newList;
+    },
+
+    async reorder(userId: string, listIds: string[]): Promise<boolean> {
+      const now = new Date().toISOString();
+      if (isMongoConnected) {
+        const bulkOps = listIds.map((id, index) => ({
+          updateOne: {
+            filter: { _id: id, userId },
+            update: { $set: { order: index, updatedAt: now } },
+          },
+        }));
+        if (bulkOps.length > 0) {
+          await MTaskList.bulkWrite(bulkOps);
+        }
+        return true;
+      }
+
+      listIds.forEach((id, index) => {
+        const item = memoryDb.taskLists.find(l => l._id === id && l.userId === userId);
+        if (item) {
+          item.order = index;
+          item.updatedAt = now;
+        }
+      });
+      saveLocalDb();
+      return true;
     },
 
     async update(id: string, userId: string, updates: Partial<TaskListDoc>): Promise<TaskListDoc | null> {

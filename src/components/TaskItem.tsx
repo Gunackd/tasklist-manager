@@ -1,6 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Task } from '../types/index.js';
-import { Check, Trash2, Edit2, ChevronUp, ChevronDown, CheckCircle2, Circle } from 'lucide-react';
+import {
+  Check,
+  Trash2,
+  Edit2,
+  ChevronUp,
+  ChevronDown,
+  GripVertical,
+} from 'lucide-react';
 
 interface TaskItemProps {
   task: Task;
@@ -11,6 +18,12 @@ interface TaskItemProps {
   onDelete: (taskId: string) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  isDragging?: boolean;
 }
 
 export const TaskItem: React.FC<TaskItemProps> = ({
@@ -22,6 +35,12 @@ export const TaskItem: React.FC<TaskItemProps> = ({
   onDelete,
   onMoveUp,
   onMoveDown,
+  draggable = false,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  isDragging = false,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState(task.title);
@@ -57,12 +76,29 @@ export const TaskItem: React.FC<TaskItemProps> = ({
 
   return (
     <div
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       className={`group flex items-center gap-3 p-3.5 sm:p-4 rounded-xl border transition-all duration-200 ${
-        task.completed
+        isDragging
+          ? 'opacity-40 border-dashed border-blue-500 scale-[0.99]'
+          : task.completed
           ? 'bg-zinc-50/70 dark:bg-zinc-900/40 border-zinc-200/60 dark:border-zinc-800/50'
           : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-xs hover:border-zinc-300 dark:hover:border-zinc-700'
       }`}
     >
+      {/* Drag Grip Handle */}
+      {draggable && (
+        <span
+          className="cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-0.5 rounded transition shrink-0"
+          title="Drag to reorder task"
+        >
+          <GripVertical className="w-4 h-4" />
+        </span>
+      )}
+
       {/* Reorder Buttons */}
       <div className="flex flex-col -space-y-1 opacity-40 group-hover:opacity-100 transition shrink-0">
         <button
@@ -101,7 +137,11 @@ export const TaskItem: React.FC<TaskItemProps> = ({
             : 'border-2 border-zinc-300 dark:border-zinc-600 hover:border-blue-500 text-transparent hover:text-blue-500'
         }`}
       >
-        <Check className={`w-3.5 h-3.5 stroke-[3] ${task.completed ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`} />
+        <Check
+          className={`w-3.5 h-3.5 stroke-[3] ${
+            task.completed ? 'opacity-100' : 'opacity-0 hover:opacity-100'
+          }`}
+        />
       </button>
 
       {/* Title & Editable input */}
@@ -128,10 +168,10 @@ export const TaskItem: React.FC<TaskItemProps> = ({
           <span
             onDoubleClick={() => setIsEditing(true)}
             onClick={() => onToggle(task)}
-            className={`block text-sm cursor-pointer select-none transition-all truncate ${
+            className={`block text-sm cursor-pointer select-none truncate transition-colors ${
               task.completed
                 ? 'line-through text-zinc-400 dark:text-zinc-500'
-                : 'text-zinc-800 dark:text-zinc-200 font-medium'
+                : 'text-zinc-800 dark:text-zinc-200'
             }`}
           >
             {task.title}
@@ -139,15 +179,15 @@ export const TaskItem: React.FC<TaskItemProps> = ({
         )}
       </div>
 
-      {/* Right side actions */}
-      <div className="flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 transition shrink-0">
+      {/* Actions */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
         <button
           type="button"
-          onClick={() => setIsEditing(true)}
-          title="Edit title"
+          onClick={() => setIsEditing(!isEditing)}
+          title="Edit task name"
           className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
         >
-          <Edit2 className="w-4 h-4" />
+          <Edit2 className="w-3.5 h-3.5" />
         </button>
 
         <button
@@ -156,7 +196,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
           title="Delete task"
           className="p-1.5 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition"
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>

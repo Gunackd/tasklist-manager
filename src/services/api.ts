@@ -130,6 +130,13 @@ export const api = {
     });
   },
 
+  async reorderLists(listIds: string[]) {
+    return request<{ message: string }>('/api/lists/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ listIds }),
+    });
+  },
+
   async deleteList(id: string) {
     return request<{ message: string }>(`/api/lists/${id}`, {
       method: 'DELETE',

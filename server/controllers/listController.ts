@@ -146,3 +146,21 @@ export async function deleteList(req: AuthenticatedRequest, res: Response) {
     return res.status(500).json({ message: 'Failed to delete task list: ' + err.message });
   }
 }
+
+export async function reorderLists(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+    const { listIds } = req.body;
+
+    if (!Array.isArray(listIds)) {
+      return res.status(400).json({ message: 'listIds must be an array of list IDs.' });
+    }
+
+    await db.taskLists.reorder(userId, listIds);
+    return res.json({ message: 'Task lists reordered successfully.' });
+  } catch (err: any) {
+    console.error('reorderLists error:', err);
+    return res.status(500).json({ message: 'Failed to reorder task lists: ' + err.message });
+  }
+}
+

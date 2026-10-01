@@ -7,18 +7,45 @@ import {
   Edit2,
   Trash2,
   ArrowRight,
-  CheckCircle2,
   Calendar,
   Dices,
+  GripVertical,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 interface ListCardProps {
   list: TaskList;
+  index?: number;
+  totalLists?: number;
   onEdit: (list: TaskList) => void;
   onDelete: (list: TaskList) => void;
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  isDragging?: boolean;
 }
 
-export const ListCard: React.FC<ListCardProps> = ({ list, onEdit, onDelete }) => {
+export const ListCard: React.FC<ListCardProps> = ({
+  list,
+  index = 0,
+  totalLists = 1,
+  onEdit,
+  onDelete,
+  onMoveLeft,
+  onMoveRight,
+  draggable = false,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  isDragging = false,
+}) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const getBorderAccent = () => {
@@ -40,17 +67,34 @@ export const ListCard: React.FC<ListCardProps> = ({ list, onEdit, onDelete }) =>
 
   return (
     <div
-      className={`group relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-t-4 ${getBorderAccent()} rounded-2xl p-5 shadow-xs hover:shadow-lg hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300 flex flex-col justify-between`}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={`group relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-t-4 ${getBorderAccent()} rounded-2xl p-5 shadow-xs hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 flex flex-col justify-between ${
+        isDragging ? 'opacity-40 scale-95 border-dashed border-blue-500' : ''
+      }`}
     >
       <div>
         {/* Top Header & Actions Menu */}
-        <div className="flex items-start justify-between gap-3 mb-2">
-          <Link
-            to={`/list/${list._id}`}
-            className="text-lg font-bold text-zinc-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1"
-          >
-            {list.title}
-          </Link>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {draggable && (
+              <span
+                className="cursor-grab active:cursor-grabbing text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-0.5 rounded transition"
+                title="Drag to reorder list"
+              >
+                <GripVertical className="w-4 h-4 shrink-0" />
+              </span>
+            )}
+            <Link
+              to={`/list/${list._id}`}
+              className="text-lg font-bold text-zinc-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1 truncate"
+            >
+              {list.title}
+            </Link>
+          </div>
 
           <div className="relative shrink-0">
             <button
@@ -67,7 +111,7 @@ export const ListCard: React.FC<ListCardProps> = ({ list, onEdit, onDelete }) =>
                   className="fixed inset-0 z-20"
                   onClick={() => setMenuOpen(false)}
                 />
-                <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl z-30 py-1 text-xs">
+                <div className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl z-30 py-1 text-xs">
                   <Link
                     to={`/list/${list._id}?randomize=true`}
                     onClick={() => setMenuOpen(false)}
@@ -76,6 +120,35 @@ export const ListCard: React.FC<ListCardProps> = ({ list, onEdit, onDelete }) =>
                     <Dices className="w-3.5 h-3.5" />
                     Pick Random Task
                   </Link>
+
+                  {onMoveLeft && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onMoveLeft();
+                      }}
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700/60 transition"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      Move Left
+                    </button>
+                  )}
+
+                  {onMoveRight && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onMoveRight();
+                      }}
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700/60 transition"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                      Move Right
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -121,15 +194,39 @@ export const ListCard: React.FC<ListCardProps> = ({ list, onEdit, onDelete }) =>
         </div>
       </div>
 
-      {/* Card Footer: Open List Button */}
+      {/* Card Footer: Reorder arrows & Open List Button */}
       <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
-        <span className="text-[11px] text-zinc-400 flex items-center gap-1">
-          <Calendar className="w-3 h-3" />
-          {new Date(list.createdAt).toLocaleDateString(undefined, {
-            month: 'short',
-            day: 'numeric',
-          })}
-        </span>
+        <div className="flex items-center gap-1">
+          {onMoveLeft && (
+            <button
+              type="button"
+              onClick={onMoveLeft}
+              title="Move list left"
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {onMoveRight && (
+            <button
+              type="button"
+              onClick={onMoveRight}
+              title="Move list right"
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <span className="text-[11px] text-zinc-400 flex items-center gap-1 ml-1">
+            <Calendar className="w-3 h-3" />
+            {new Date(list.createdAt).toLocaleDateString(undefined, {
+              month: 'short',
+              day: 'numeric',
+            })}
+          </span>
+        </div>
 
         <Link
           to={`/list/${list._id}`}

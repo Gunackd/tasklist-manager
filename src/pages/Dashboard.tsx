@@ -68,6 +68,40 @@ export const Dashboard: React.FC = () => {
     setDeletingList(null);
   };
 
+  // Reorder task lists
+  const [draggedListIndex, setDraggedListIndex] = useState<number | null>(null);
+
+  const handleReorderLists = async (reordered: TaskList[]) => {
+    setLists(reordered);
+    try {
+      await api.reorderLists(reordered.map((l) => l._id));
+    } catch (err: any) {
+      console.error('Failed to save list order:', err);
+    }
+  };
+
+  const handleMoveList = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= lists.length) return;
+    const newLists = [...lists];
+    const [moved] = newLists.splice(fromIndex, 1);
+    newLists.splice(toIndex, 0, moved);
+    handleReorderLists(newLists);
+  };
+
+  const handleDragStart = (index: number) => {
+    setDraggedListIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (dropIndex: number) => {
+    if (draggedListIndex === null || draggedListIndex === dropIndex) return;
+    handleMoveList(draggedListIndex, dropIndex);
+    setDraggedListIndex(null);
+  };
+
   // Compute overall stats
   const stats = useMemo(() => {
     const totalLists = lists.length;
@@ -195,7 +229,14 @@ export const Dashboard: React.FC = () => {
         {/* Section Header & Search */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-xl font-bold tracking-tight">Your Task Lists</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold tracking-tight">Your Task Lists</h2>
+              {filteredLists.length > 1 && !searchQuery && (
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 hidden sm:inline-block">
+                  Drag or use ‹ › arrows to reorder
+                </span>
+              )}
+            </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               {filteredLists.length} {filteredLists.length === 1 ? 'list' : 'lists'} available
             </p>
@@ -225,12 +266,22 @@ export const Dashboard: React.FC = () => {
           </div>
         ) : filteredLists.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredLists.map((list) => (
+            {filteredLists.map((list, index) => (
               <ListCard
                 key={list._id}
                 list={list}
+                index={index}
+                totalLists={filteredLists.length}
                 onEdit={(l) => setEditingList(l)}
                 onDelete={(l) => setDeletingList(l)}
+                onMoveLeft={!searchQuery && index > 0 ? () => handleMoveList(index, index - 1) : undefined}
+                onMoveRight={!searchQuery && index < filteredLists.length - 1 ? () => handleMoveList(index, index + 1) : undefined}
+                draggable={!searchQuery && filteredLists.length > 1}
+                onDragStart={() => handleDragStart(index)}
+                onDragOver={handleDragOver}
+                onDrop={() => handleDrop(index)}
+                onDragEnd={() => setDraggedListIndex(null)}
+                isDragging={draggedListIndex === index}
               />
             ))}
 

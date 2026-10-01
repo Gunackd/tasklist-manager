@@ -12,6 +12,7 @@ export interface TaskList {
   title: string;
   description?: string;
   color?: string;
+  order?: number;
   totalTasks: number;
   completedTasks: number;
   progress: number;

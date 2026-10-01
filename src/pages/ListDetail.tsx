@@ -181,6 +181,24 @@ export const ListDetail: React.FC = () => {
     }
   };
 
+  const [draggedTaskIndex, setDraggedTaskIndex] = useState<number | null>(null);
+
+  const handleDropTask = (dropIndex: number) => {
+    if (draggedTaskIndex === null || draggedTaskIndex === dropIndex || !id) return;
+    const newTasks = [...tasks];
+    const [moved] = newTasks.splice(draggedTaskIndex, 1);
+    newTasks.splice(dropIndex, 0, moved);
+
+    const reorderedWithIndices = newTasks.map((t, idx) => ({ ...t, order: idx }));
+    setTasks(reorderedWithIndices);
+    setDraggedTaskIndex(null);
+
+    api.reorderTasks(
+      id,
+      reorderedWithIndices.map((t) => t._id)
+    ).catch((err) => console.error('Failed to save task order:', err));
+  };
+
   // Clear completed tasks
   const handleClearCompleted = async () => {
     if (!id) return;
@@ -470,6 +488,12 @@ export const ListDetail: React.FC = () => {
                 onMoveDown={
                   index < tasks.length - 1 ? () => handleMoveTask(index, 'down') : undefined
                 }
+                draggable={filter === 'all' && !searchQuery}
+                onDragStart={() => setDraggedTaskIndex(index)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => handleDropTask(index)}
+                onDragEnd={() => setDraggedTaskIndex(null)}
+                isDragging={draggedTaskIndex === index}
               />
             ))
           ) : (

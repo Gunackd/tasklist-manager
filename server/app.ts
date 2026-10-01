@@ -80,6 +80,7 @@ router.put('/auth/profile', authMiddleware as any, authController.updateProfile 
 // Task Lists routes (protected)
 router.get('/lists', authMiddleware as any, listController.getLists as any);
 router.post('/lists', authMiddleware as any, listController.createList as any);
+router.put('/lists/reorder', authMiddleware as any, listController.reorderLists as any);
 router.get('/lists/:id', authMiddleware as any, listController.getListById as any);
 router.put('/lists/:id', authMiddleware as any, listController.updateList as any);
 router.delete('/lists/:id', authMiddleware as any, listController.deleteList as any);
