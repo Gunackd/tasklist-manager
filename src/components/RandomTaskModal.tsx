@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Task } from '../types/index.js';
-import confetti from 'canvas-confetti';
 import {
   Dices,
   X,
@@ -8,7 +7,6 @@ import {
   CheckCircle2,
   Circle,
   Sparkles,
-  ArrowRight,
   Filter,
 } from 'lucide-react';
 
@@ -28,81 +26,51 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
   onToggleTask,
 }) => {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [isRolling, setIsRolling] = useState(false);
-  const [displayedTitle, setDisplayedTitle] = useState('');
   const [onlyIncomplete, setOnlyIncomplete] = useState(true);
 
-  const getEligibleTasks = () => {
-    if (onlyIncomplete) {
+  const getEligibleTasks = (filterIncomplete: boolean) => {
+    if (filterIncomplete) {
       const incomplete = tasks.filter((t) => !t.completed);
       return incomplete.length > 0 ? incomplete : tasks;
     }
     return tasks;
   };
 
-  const rollTask = () => {
-    const eligible = getEligibleTasks();
+  const pickRandomTask = (filterIncomplete: boolean = onlyIncomplete) => {
+    const eligible = getEligibleTasks(filterIncomplete);
     if (eligible.length === 0) {
       setSelectedTask(null);
       return;
     }
-
-    setIsRolling(true);
-
-    let counter = 0;
-    const totalFlips = Math.min(18, Math.max(8, eligible.length * 2));
-    const intervalTime = 60;
-
-    const interval = setInterval(() => {
-      const randomIndex = Math.floor(Math.random() * eligible.length);
-      setDisplayedTitle(eligible[randomIndex].title);
-      counter++;
-
-      if (counter >= totalFlips) {
-        clearInterval(interval);
-        // Final pick
-        const finalPick = eligible[Math.floor(Math.random() * eligible.length)];
-        setSelectedTask(finalPick);
-        setDisplayedTitle(finalPick.title);
-        setIsRolling(false);
-
-        // Fun small confetti celebration
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.55 },
-          ticks: 200,
-        });
-      }
-    }, intervalTime);
+    const randomIndex = Math.floor(Math.random() * eligible.length);
+    setSelectedTask(eligible[randomIndex]);
   };
 
   useEffect(() => {
     if (isOpen && tasks.length > 0) {
-      rollTask();
+      pickRandomTask(onlyIncomplete);
     } else {
       setSelectedTask(null);
-      setDisplayedTitle('');
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const eligibleTasks = getEligibleTasks();
+  const eligibleTasks = getEligibleTasks(onlyIncomplete);
   const incompleteCount = tasks.filter((t) => !t.completed).length;
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
     >
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
-              <Dices className={`w-5 h-5 ${isRolling ? 'animate-spin' : ''}`} />
+              <Dices className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
@@ -116,7 +84,7 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+            className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -131,7 +99,7 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
                 No Tasks in this List
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-xs mx-auto">
-                Add some tasks to this list first, then come back to pick a random one!
+                Add some tasks to this list first, then pick a random one to focus on!
               </p>
             </div>
           ) : (
@@ -147,8 +115,9 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
                   onClick={() => {
                     const nextVal = !onlyIncomplete;
                     setOnlyIncomplete(nextVal);
+                    pickRandomTask(nextVal);
                   }}
-                  className="px-2.5 py-1 rounded-lg font-semibold transition text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/80 hover:bg-purple-200 dark:hover:bg-purple-900/60"
+                  className="px-2.5 py-1 rounded-lg font-semibold transition-colors text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-950/80 hover:bg-purple-200 dark:hover:bg-purple-900/60"
                 >
                   {onlyIncomplete && incompleteCount > 0
                     ? `Active tasks only (${incompleteCount} left)`
@@ -157,22 +126,18 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
               </div>
 
               {/* Chosen Task Card */}
-              <div className="relative p-6 sm:p-8 rounded-2xl bg-gradient-to-br from-purple-500/10 via-blue-500/5 to-transparent border-2 border-purple-300 dark:border-purple-800/60 text-center overflow-hidden">
-                <span className="inline-block px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 mb-3 shadow-xs">
-                  {isRolling ? 'Rolling dice...' : 'Your Next Task To Do 🎯'}
+              <div className="p-6 sm:p-8 rounded-2xl bg-purple-500/5 border-2 border-purple-200 dark:border-purple-800/60 text-center">
+                <span className="inline-block px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 mb-3">
+                  Your Picked Task 🎯
                 </span>
 
-                <div className="min-h-[72px] flex items-center justify-center">
-                  <h3
-                    className={`text-xl sm:text-2xl font-black text-zinc-900 dark:text-white transition-all duration-150 ${
-                      isRolling ? 'scale-95 blur-[0.5px] opacity-70' : 'scale-100'
-                    }`}
-                  >
-                    {displayedTitle || 'No task selected'}
+                <div className="min-h-[64px] flex items-center justify-center">
+                  <h3 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
+                    {selectedTask?.title || 'No task selected'}
                   </h3>
                 </div>
 
-                {selectedTask && !isRolling && (
+                {selectedTask && (
                   <div className="mt-4 pt-4 border-t border-purple-200/60 dark:border-purple-800/40 flex items-center justify-center gap-3">
                     <button
                       type="button"
@@ -183,7 +148,7 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
                           completed: !selectedTask.completed,
                         });
                       }}
-                      className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition shadow-xs ${
+                      className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                         selectedTask.completed
                           ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                           : 'bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:border-emerald-500'
@@ -210,19 +175,19 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition"
+                  className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors"
                 >
                   Close
                 </button>
 
                 <button
                   type="button"
-                  disabled={isRolling || eligibleTasks.length === 0}
-                  onClick={rollTask}
-                  className="px-5 py-2.5 text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-xl shadow-md shadow-purple-500/20 transition flex items-center gap-2"
+                  disabled={eligibleTasks.length === 0}
+                  onClick={() => pickRandomTask(onlyIncomplete)}
+                  className="px-5 py-2.5 text-sm font-bold text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-xl shadow-xs transition-colors flex items-center gap-2"
                 >
-                  <RotateCcw className={`w-4 h-4 ${isRolling ? 'animate-spin' : ''}`} />
-                  <span>{isRolling ? 'Spinning...' : 'Pick Another (Reroll)'}</span>
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Pick Another (Reroll)</span>
                 </button>
               </div>
             </>
