@@ -1,0 +1,6 @@
+{
+  "name": "TaskList Manager",
+  "description": "A modern full-stack task list manager with bulk task import, progress tracking, and multi-user authentication.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

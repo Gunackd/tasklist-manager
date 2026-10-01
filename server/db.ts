@@ -1,0 +1,468 @@
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import mongoose from 'mongoose';
+
+export interface UserDoc {
+  _id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  avatarUrl?: string;
+  resetToken?: string | null;
+  resetTokenExpiry?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskListDoc {
+  _id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskDoc {
+  _id: string;
+  taskListId: string;
+  userId: string;
+  title: string;
+  completed: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface LocalDatabase {
+  users: UserDoc[];
+  taskLists: TaskListDoc[];
+  tasks: TaskDoc[];
+}
+
+const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_FILE = path.join(DATA_DIR, 'db.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+let memoryDb: LocalDatabase = {
+  users: [],
+  taskLists: [],
+  tasks: [],
+};
+
+// Load existing data from file if present
+function loadLocalDb(): LocalDatabase {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const content = fs.readFileSync(DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      return {
+        users: parsed.users || [],
+        taskLists: parsed.taskLists || [],
+        tasks: parsed.tasks || [],
+      };
+    }
+  } catch (err) {
+    console.error('Failed to read local database file:', err);
+  }
+  return { users: [], taskLists: [], tasks: [] };
+}
+
+function saveLocalDb() {
+  try {
+    const tempFile = `${DATA_FILE}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(memoryDb, null, 2), 'utf-8');
+    fs.renameSync(tempFile, DATA_FILE);
+  } catch (err) {
+    console.error('Failed to persist database file:', err);
+  }
+}
+
+memoryDb = loadLocalDb();
+
+let isMongoConnected = false;
+
+// Optional MongoDB Mongoose schemas
+const MUserSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  passwordHash: { type: String, required: true },
+  avatarUrl: { type: String },
+  resetToken: { type: String, default: null },
+  resetTokenExpiry: { type: Number, default: null },
+}, { timestamps: true });
+
+const MTaskListSchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  title: { type: String, required: true },
+  description: { type: String, default: '' },
+  color: { type: String, default: 'blue' },
+}, { timestamps: true });
+
+const MTaskSchema = new mongoose.Schema({
+  taskListId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },
+  title: { type: String, required: true },
+  completed: { type: Boolean, default: false },
+  order: { type: Number, default: 0 },
+}, { timestamps: true });
+
+export let MUser: mongoose.Model<any>;
+export let MTaskList: mongoose.Model<any>;
+export let MTask: mongoose.Model<any>;
+
+export async function initDatabase() {
+  const mongoUri = process.env.MONGODB_URI;
+  if (mongoUri && !mongoUri.includes('username:password')) {
+    try {
+      console.log('Connecting to MongoDB Atlas...');
+      await mongoose.connect(mongoUri, {
+        serverSelectionTimeoutMS: 4000,
+      });
+      isMongoConnected = true;
+      MUser = mongoose.models.User || mongoose.model('User', MUserSchema);
+      MTaskList = mongoose.models.TaskList || mongoose.model('TaskList', MTaskListSchema);
+      MTask = mongoose.models.Task || mongoose.model('Task', MTaskSchema);
+      console.log('Successfully connected to MongoDB Atlas!');
+      return;
+    } catch (err) {
+      console.warn('MongoDB connection failed or timeout, falling back to persistent disk database:', (err as Error).message);
+      isMongoConnected = false;
+    }
+  } else {
+    console.log('Using persistent disk database at:', DATA_FILE);
+  }
+}
+
+export function getDatabaseStatus() {
+  return {
+    isMongo: isMongoConnected,
+    type: isMongoConnected ? 'MongoDB Atlas' : 'Persistent File Cloud DB (JSON/Disk)',
+    totalUsers: memoryDb.users.length,
+    totalLists: memoryDb.taskLists.length,
+    totalTasks: memoryDb.tasks.length,
+  };
+}
+
+// Unified Database Provider
+export const db = {
+  users: {
+    async findByEmail(email: string): Promise<UserDoc | null> {
+      const normalized = email.trim().toLowerCase();
+      if (isMongoConnected) {
+        const doc = await MUser.findOne({ email: normalized }).lean();
+        if (!doc) return null;
+        return { ...doc, _id: doc._id.toString() } as unknown as UserDoc;
+      }
+      return memoryDb.users.find(u => u.email.toLowerCase() === normalized) || null;
+    },
+
+    async findById(id: string): Promise<UserDoc | null> {
+      if (isMongoConnected) {
+        const doc = await MUser.findById(id).lean();
+        if (!doc) return null;
+        return { ...doc, _id: doc._id.toString() } as unknown as UserDoc;
+      }
+      return memoryDb.users.find(u => u._id === id) || null;
+    },
+
+    async create(userData: Omit<UserDoc, '_id' | 'createdAt' | 'updatedAt'>): Promise<UserDoc> {
+      const now = new Date().toISOString();
+      if (isMongoConnected) {
+        const created = await MUser.create({
+          ...userData,
+          email: userData.email.toLowerCase(),
+        });
+        const doc = created.toObject();
+        return { ...doc, _id: doc._id.toString() } as unknown as UserDoc;
+      }
+
+      const newUser: UserDoc = {
+        _id: `usr_${crypto.randomUUID()}`,
+        name: userData.name,
+        email: userData.email.toLowerCase(),
+        passwordHash: userData.passwordHash,
+        avatarUrl: userData.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(userData.name)}`,
+        resetToken: userData.resetToken || null,
+        resetTokenExpiry: userData.resetTokenExpiry || null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      memoryDb.users.push(newUser);
+      saveLocalDb();
+      return newUser;
+    },
+
+    async update(id: string, updates: Partial<UserDoc>): Promise<UserDoc | null> {
+      const now = new Date().toISOString();
+      if (isMongoConnected) {
+        const updated = await MUser.findByIdAndUpdate(id, { ...updates, updatedAt: now }, { new: true }).lean();
+        if (!updated) return null;
+        return { ...updated, _id: updated._id.toString() } as unknown as UserDoc;
+      }
+
+      const index = memoryDb.users.findIndex(u => u._id === id);
+      if (index === -1) return null;
+      memoryDb.users[index] = {
+        ...memoryDb.users[index],
+        ...updates,
+        updatedAt: now,
+      };
+      saveLocalDb();
+      return memoryDb.users[index];
+    },
+
+    async findByResetToken(token: string): Promise<UserDoc | null> {
+      const now = Date.now();
+      if (isMongoConnected) {
+        const doc = await MUser.findOne({
+          resetToken: token,
+          resetTokenExpiry: { $gt: now },
+        }).lean();
+        if (!doc) return null;
+        return { ...doc, _id: doc._id.toString() } as unknown as UserDoc;
+      }
+      return memoryDb.users.find(u => u.resetToken === token && (u.resetTokenExpiry || 0) > now) || null;
+    }
+  },
+
+  taskLists: {
+    async findByUserId(userId: string): Promise<TaskListDoc[]> {
+      if (isMongoConnected) {
+        const docs = await MTaskList.find({ userId }).sort({ createdAt: -1 }).lean();
+        return docs.map(d => ({ ...d, _id: d._id.toString() })) as unknown as TaskListDoc[];
+      }
+      return memoryDb.taskLists
+        .filter(l => l.userId === userId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    },
+
+    async findById(id: string): Promise<TaskListDoc | null> {
+      if (isMongoConnected) {
+        const doc = await MTaskList.findById(id).lean();
+        if (!doc) return null;
+        return { ...doc, _id: doc._id.toString() } as unknown as TaskListDoc;
+      }
+      return memoryDb.taskLists.find(l => l._id === id) || null;
+    },
+
+    async create(listData: { userId: string; title: string; description?: string; color?: string }): Promise<TaskListDoc> {
+      const now = new Date().toISOString();
+      if (isMongoConnected) {
+        const created = await MTaskList.create(listData);
+        const doc = created.toObject();
+        return { ...doc, _id: doc._id.toString() } as unknown as TaskListDoc;
+      }
+
+      const newList: TaskListDoc = {
+        _id: `list_${crypto.randomUUID()}`,
+        userId: listData.userId,
+        title: listData.title,
+        description: listData.description || '',
+        color: listData.color || 'blue',
+        createdAt: now,
+        updatedAt: now,
+      };
+      memoryDb.taskLists.push(newList);
+      saveLocalDb();
+      return newList;
+    },
+
+    async update(id: string, userId: string, updates: Partial<TaskListDoc>): Promise<TaskListDoc | null> {
+      const now = new Date().toISOString();
+      if (isMongoConnected) {
+        const updated = await MTaskList.findOneAndUpdate(
+          { _id: id, userId },
+          { ...updates, updatedAt: now },
+          { new: true }
+        ).lean();
+        if (!updated) return null;
+        return { ...updated, _id: updated._id.toString() } as unknown as TaskListDoc;
+      }
+
+      const index = memoryDb.taskLists.findIndex(l => l._id === id && l.userId === userId);
+      if (index === -1) return null;
+      memoryDb.taskLists[index] = {
+        ...memoryDb.taskLists[index],
+        ...updates,
+        updatedAt: now,
+      };
+      saveLocalDb();
+      return memoryDb.taskLists[index];
+    },
+
+    async delete(id: string, userId: string): Promise<boolean> {
+      if (isMongoConnected) {
+        const res = await MTaskList.deleteOne({ _id: id, userId });
+        if (res.deletedCount > 0) {
+          await MTask.deleteMany({ taskListId: id });
+          return true;
+        }
+        return false;
+      }
+
+      const initialLength = memoryDb.taskLists.length;
+      memoryDb.taskLists = memoryDb.taskLists.filter(l => !(l._id === id && l.userId === userId));
+      if (memoryDb.taskLists.length < initialLength) {
+        // Also cascade delete tasks in this list
+        memoryDb.tasks = memoryDb.tasks.filter(t => t.taskListId !== id);
+        saveLocalDb();
+        return true;
+      }
+      return false;
+    }
+  },
+
+  tasks: {
+    async findByListId(taskListId: string): Promise<TaskDoc[]> {
+      if (isMongoConnected) {
+        const docs = await MTask.find({ taskListId }).sort({ order: 1, createdAt: 1 }).lean();
+        return docs.map(d => ({ ...d, _id: d._id.toString() })) as unknown as TaskDoc[];
+      }
+      return memoryDb.tasks
+        .filter(t => t.taskListId === taskListId)
+        .sort((a, b) => a.order - b.order || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    },
+
+    async findById(id: string): Promise<TaskDoc | null> {
+      if (isMongoConnected) {
+        const doc = await MTask.findById(id).lean();
+        if (!doc) return null;
+        return { ...doc, _id: doc._id.toString() } as unknown as TaskDoc;
+      }
+      return memoryDb.tasks.find(t => t._id === id) || null;
+    },
+
+    async create(taskData: { taskListId: string; userId: string; title: string; order?: number }): Promise<TaskDoc> {
+      const now = new Date().toISOString();
+      let order = taskData.order;
+      if (order === undefined) {
+        const existing = await this.findByListId(taskData.taskListId);
+        order = existing.length > 0 ? Math.max(...existing.map(e => e.order)) + 1 : 0;
+      }
+
+      if (isMongoConnected) {
+        const created = await MTask.create({ ...taskData, order, completed: false });
+        const doc = created.toObject();
+        return { ...doc, _id: doc._id.toString() } as unknown as TaskDoc;
+      }
+
+      const newTask: TaskDoc = {
+        _id: `task_${crypto.randomUUID()}`,
+        taskListId: taskData.taskListId,
+        userId: taskData.userId,
+        title: taskData.title,
+        completed: false,
+        order,
+        createdAt: now,
+        updatedAt: now,
+      };
+      memoryDb.tasks.push(newTask);
+      saveLocalDb();
+      return newTask;
+    },
+
+    async createMany(taskListId: string, userId: string, titles: string[]): Promise<TaskDoc[]> {
+      const now = new Date().toISOString();
+      const existing = await this.findByListId(taskListId);
+      let startOrder = existing.length > 0 ? Math.max(...existing.map(e => e.order)) + 1 : 0;
+
+      const newTasks: TaskDoc[] = titles.map((title, idx) => ({
+        _id: `task_${crypto.randomUUID()}`,
+        taskListId,
+        userId,
+        title,
+        completed: false,
+        order: startOrder + idx,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      if (isMongoConnected) {
+        const toInsert = newTasks.map(t => ({
+          taskListId: t.taskListId,
+          userId: t.userId,
+          title: t.title,
+          completed: false,
+          order: t.order,
+        }));
+        const createdDocs = await MTask.insertMany(toInsert);
+        return createdDocs.map(d => ({ ...d.toObject(), _id: d._id.toString() })) as unknown as TaskDoc[];
+      }
+
+      memoryDb.tasks.push(...newTasks);
+      saveLocalDb();
+      return newTasks;
+    },
+
+    async update(id: string, userId: string, updates: Partial<TaskDoc>): Promise<TaskDoc | null> {
+      const now = new Date().toISOString();
+      if (isMongoConnected) {
+        const updated = await MTask.findOneAndUpdate(
+          { _id: id, userId },
+          { ...updates, updatedAt: now },
+          { new: true }
+        ).lean();
+        if (!updated) return null;
+        return { ...updated, _id: updated._id.toString() } as unknown as TaskDoc;
+      }
+
+      const index = memoryDb.tasks.findIndex(t => t._id === id && t.userId === userId);
+      if (index === -1) return null;
+      memoryDb.tasks[index] = {
+        ...memoryDb.tasks[index],
+        ...updates,
+        updatedAt: now,
+      };
+      saveLocalDb();
+      return memoryDb.tasks[index];
+    },
+
+    async reorder(taskListId: string, userId: string, taskIds: string[]): Promise<boolean> {
+      const now = new Date().toISOString();
+      if (isMongoConnected) {
+        const bulkOps = taskIds.map((id, index) => ({
+          updateOne: {
+            filter: { _id: id, taskListId, userId },
+            update: { $set: { order: index, updatedAt: now } }
+          }
+        }));
+        await MTask.bulkWrite(bulkOps);
+        return true;
+      }
+
+      for (let i = 0; i < taskIds.length; i++) {
+        const id = taskIds[i];
+        const task = memoryDb.tasks.find(t => t._id === id && t.taskListId === taskListId && t.userId === userId);
+        if (task) {
+          task.order = i;
+          task.updatedAt = now;
+        }
+      }
+      saveLocalDb();
+      return true;
+    },
+
+    async delete(id: string, userId: string): Promise<boolean> {
+      if (isMongoConnected) {
+        const res = await MTask.deleteOne({ _id: id, userId });
+        return res.deletedCount > 0;
+      }
+
+      const initialLength = memoryDb.tasks.length;
+      memoryDb.tasks = memoryDb.tasks.filter(t => !(t._id === id && t.userId === userId));
+      if (memoryDb.tasks.length < initialLength) {
+        saveLocalDb();
+        return true;
+      }
+      return false;
+    }
+  }
+};
