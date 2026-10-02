@@ -131,7 +131,12 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
                   Your Picked Task 🎯
                 </span>
 
-                <div className="min-h-[64px] flex items-center justify-center">
+                <div className="min-h-[64px] flex flex-col items-center justify-center gap-2">
+                  {selectedTask && (
+                    <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold border bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border-purple-200 dark:border-purple-800">
+                      Category: [{selectedTask.category || 'S'}]
+                    </span>
+                  )}
                   <h3 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
                     {selectedTask?.title || 'No task selected'}
                   </h3>

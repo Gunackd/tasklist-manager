@@ -31,6 +31,7 @@ export interface TaskDoc {
   taskListId: string;
   userId: string;
   title: string;
+  category?: 'S' | 'NS' | 'M';
   completed: boolean;
   order: number;
   completedAt?: string | null;
@@ -117,10 +118,13 @@ const MTaskSchema = new mongoose.Schema({
   taskListId: { type: String, required: true, index: true },
   userId: { type: String, required: true, index: true },
   title: { type: String, required: true },
+  category: { type: String, enum: ['S', 'NS', 'M'], default: 'S', index: true },
   completed: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
   completedAt: { type: String, default: null },
 }, { timestamps: true });
+
+MTaskSchema.index({ userId: 1, category: 1 });
 
 export let MUser: mongoose.Model<any>;
 export let MTaskList: mongoose.Model<any>;
@@ -370,10 +374,11 @@ export const db = {
     async findByListId(taskListId: string): Promise<TaskDoc[]> {
       if (isMongoConnected) {
         const docs = await MTask.find({ taskListId }).sort({ order: 1, createdAt: 1 }).lean();
-        return docs.map(d => ({ ...d, _id: d._id.toString() })) as unknown as TaskDoc[];
+        return docs.map(d => ({ ...d, _id: d._id.toString(), category: (d.category as any) || 'S' })) as unknown as TaskDoc[];
       }
       return memoryDb.tasks
         .filter(t => t.taskListId === taskListId)
+        .map(t => ({ ...t, category: t.category || 'S' }))
         .sort((a, b) => a.order - b.order || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     },
 
@@ -381,13 +386,40 @@ export const db = {
       if (isMongoConnected) {
         const doc = await MTask.findById(id).lean();
         if (!doc) return null;
-        return { ...doc, _id: doc._id.toString() } as unknown as TaskDoc;
+        return { ...doc, _id: doc._id.toString(), category: (doc.category as any) || 'S' } as unknown as TaskDoc;
       }
-      return memoryDb.tasks.find(t => t._id === id) || null;
+      const found = memoryDb.tasks.find(t => t._id === id);
+      return found ? { ...found, category: found.category || 'S' } : null;
     },
 
-    async create(taskData: { taskListId: string; userId: string; title: string; order?: number }): Promise<TaskDoc> {
+    async findByUserId(userId: string, category?: string): Promise<TaskDoc[]> {
+      const validCategory = category && ['S', 'NS', 'M'].includes(category) ? category : null;
+      if (isMongoConnected) {
+        const filter: any = { userId };
+        if (validCategory) {
+          if (validCategory === 'S') {
+            filter.$or = [{ category: 'S' }, { category: { $exists: false } }, { category: null }];
+          } else {
+            filter.category = validCategory;
+          }
+        }
+        const docs = await MTask.find(filter).sort({ order: 1, createdAt: 1 }).lean();
+        return docs.map(d => ({ ...d, _id: d._id.toString(), category: (d.category as any) || 'S' })) as unknown as TaskDoc[];
+      }
+
+      return memoryDb.tasks
+        .filter(t => {
+          if (t.userId !== userId) return false;
+          const taskCat = t.category || 'S';
+          return !validCategory || taskCat === validCategory;
+        })
+        .map(t => ({ ...t, category: t.category || 'S' }))
+        .sort((a, b) => a.order - b.order || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    },
+
+    async create(taskData: { taskListId: string; userId: string; title: string; category?: 'S' | 'NS' | 'M'; order?: number }): Promise<TaskDoc> {
       const now = new Date().toISOString();
+      const category = taskData.category && ['S', 'NS', 'M'].includes(taskData.category) ? taskData.category : 'S';
       let order = taskData.order;
       if (order === undefined) {
         const existing = await this.findByListId(taskData.taskListId);
@@ -395,9 +427,9 @@ export const db = {
       }
 
       if (isMongoConnected) {
-        const created = await MTask.create({ ...taskData, order, completed: false });
+        const created = await MTask.create({ ...taskData, category, order, completed: false });
         const doc = created.toObject();
-        return { ...doc, _id: doc._id.toString() } as unknown as TaskDoc;
+        return { ...doc, _id: doc._id.toString(), category } as unknown as TaskDoc;
       }
 
       const newTask: TaskDoc = {
@@ -405,6 +437,7 @@ export const db = {
         taskListId: taskData.taskListId,
         userId: taskData.userId,
         title: taskData.title,
+        category,
         completed: false,
         order,
         createdAt: now,
@@ -415,32 +448,44 @@ export const db = {
       return newTask;
     },
 
-    async createMany(taskListId: string, userId: string, titles: string[]): Promise<TaskDoc[]> {
+    async createMany(
+      taskListId: string,
+      userId: string,
+      items: ({ title: string; category?: 'S' | 'NS' | 'M' } | string)[],
+      defaultCategory: 'S' | 'NS' | 'M' = 'S'
+    ): Promise<TaskDoc[]> {
       const now = new Date().toISOString();
       const existing = await this.findByListId(taskListId);
       let startOrder = existing.length > 0 ? Math.max(...existing.map(e => e.order)) + 1 : 0;
 
-      const newTasks: TaskDoc[] = titles.map((title, idx) => ({
-        _id: `task_${crypto.randomUUID()}`,
-        taskListId,
-        userId,
-        title,
-        completed: false,
-        order: startOrder + idx,
-        createdAt: now,
-        updatedAt: now,
-      }));
+      const newTasks: TaskDoc[] = items.map((item, idx) => {
+        const title = typeof item === 'string' ? item : item.title;
+        const rawCat = typeof item === 'string' ? defaultCategory : (item.category || defaultCategory);
+        const category = ['S', 'NS', 'M'].includes(rawCat) ? rawCat : 'S';
+        return {
+          _id: `task_${crypto.randomUUID()}`,
+          taskListId,
+          userId,
+          title,
+          category,
+          completed: false,
+          order: startOrder + idx,
+          createdAt: now,
+          updatedAt: now,
+        };
+      });
 
       if (isMongoConnected) {
         const toInsert = newTasks.map(t => ({
           taskListId: t.taskListId,
           userId: t.userId,
           title: t.title,
+          category: t.category,
           completed: false,
           order: t.order,
         }));
         const createdDocs = await MTask.insertMany(toInsert);
-        return createdDocs.map(d => ({ ...d.toObject(), _id: d._id.toString() })) as unknown as TaskDoc[];
+        return createdDocs.map(d => ({ ...d.toObject(), _id: d._id.toString(), category: (d.category as any) || 'S' })) as unknown as TaskDoc[];
       }
 
       memoryDb.tasks.push(...newTasks);
@@ -457,7 +502,7 @@ export const db = {
           { new: true }
         ).lean();
         if (!updated) return null;
-        return { ...updated, _id: updated._id.toString() } as unknown as TaskDoc;
+        return { ...updated, _id: updated._id.toString(), category: (updated.category as any) || 'S' } as unknown as TaskDoc;
       }
 
       const index = memoryDb.tasks.findIndex(t => t._id === id && t.userId === userId);
@@ -465,6 +510,7 @@ export const db = {
       memoryDb.tasks[index] = {
         ...memoryDb.tasks[index],
         ...updates,
+        category: updates.category || memoryDb.tasks[index].category || 'S',
         updatedAt: now,
       };
       saveLocalDb();

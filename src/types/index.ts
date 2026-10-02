@@ -26,14 +26,19 @@ export interface TaskList {
   } | null;
 }
 
+export type TaskCategory = 'S' | 'NS' | 'M';
+
 export interface Task {
   _id: string;
   taskListId: string;
   userId: string;
   title: string;
+  category: TaskCategory;
   completed: boolean;
   order: number;
   completedAt?: string | null;
+  taskListTitle?: string;
+  taskListColor?: string;
   createdAt: string;
   updatedAt: string;
 }

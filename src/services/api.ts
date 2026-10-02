@@ -1,4 +1,4 @@
-import { User, TaskList, Task } from '../types/index.js';
+import { User, TaskList, Task, TaskCategory } from '../types/index.js';
 
 const TOKEN_KEY = 'taskmanager_jwt_token';
 
@@ -144,25 +144,34 @@ export const api = {
   },
 
   // Tasks
+  async getAllTasks(category?: string) {
+    const query = category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : '';
+    return request<Task[]>(`/api/tasks${query}`);
+  },
+
   async getTasks(listId: string) {
     return request<Task[]>(`/api/lists/${listId}/tasks`);
   },
 
-  async createTask(listId: string, title: string) {
+  async createTask(listId: string, title: string, category: TaskCategory = 'S') {
     return request<Task>(`/api/lists/${listId}/tasks`, {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, category }),
     });
   },
 
-  async bulkAddTasks(listId: string, tasks: string[]) {
+  async bulkAddTasks(
+    listId: string,
+    tasks: (string | { title: string; category?: TaskCategory })[],
+    category: TaskCategory = 'S'
+  ) {
     return request<{ message: string; tasks: Task[] }>(`/api/lists/${listId}/tasks/bulk`, {
       method: 'POST',
-      body: JSON.stringify({ tasks }),
+      body: JSON.stringify({ tasks, category }),
     });
   },
 
-  async updateTask(id: string, updates: Partial<{ title: string; completed: boolean; order: number }>) {
+  async updateTask(id: string, updates: Partial<{ title: string; completed: boolean; order: number; category: TaskCategory }>) {
     return request<Task>(`/api/tasks/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),

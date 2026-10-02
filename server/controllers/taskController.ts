@@ -2,6 +2,35 @@ import { Response } from 'express';
 import { db } from '../db.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
 
+export async function getAllTasks(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : undefined;
+
+    const [tasks, lists] = await Promise.all([
+      db.tasks.findByUserId(userId, category),
+      db.taskLists.findByUserId(userId),
+    ]);
+
+    const listMap = new Map(lists.map(l => [l._id, { title: l.title, color: l.color }]));
+
+    const enrichedTasks = tasks.map(t => {
+      const listInfo = listMap.get(t.taskListId);
+      return {
+        ...t,
+        category: t.category || 'S',
+        taskListTitle: listInfo?.title || 'Unknown List',
+        taskListColor: listInfo?.color || 'blue',
+      };
+    });
+
+    return res.json(enrichedTasks);
+  } catch (err: any) {
+    console.error('getAllTasks error:', err);
+    return res.status(500).json({ message: 'Failed to fetch tasks: ' + err.message });
+  }
+}
+
 export async function getTasksByList(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
@@ -28,7 +57,7 @@ export async function createTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { listId } = req.params;
-    const { title } = req.body;
+    const { title, category } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ message: 'Task title is required.' });
@@ -42,10 +71,13 @@ export async function createTask(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ message: 'Access denied: Cannot add task to another user\'s list.' });
     }
 
+    const validCategory = category && ['S', 'NS', 'M'].includes(category) ? category : 'S';
+
     const task = await db.tasks.create({
       taskListId: listId,
       userId,
       title: title.trim(),
+      category: validCategory,
     });
 
     return res.status(201).json(task);
@@ -59,7 +91,7 @@ export async function bulkAddTasks(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { listId } = req.params;
-    const { tasks } = req.body; // Array of strings or raw text
+    const { tasks, category } = req.body; // Array of strings or { title, category } objects
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return res.status(400).json({ message: 'Expected a non-empty array of task titles.' });
@@ -73,24 +105,54 @@ export async function bulkAddTasks(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ message: 'Access denied: Cannot add tasks to another user\'s list.' });
     }
 
-    // Clean numbering, bullets, and empty items
-    const cleanedTitles = tasks
-      .map((t: any) => (typeof t === 'string' ? t.trim() : ''))
-      .map((t: string) => {
-        return t
-          .replace(/^\[[ xX]\]\s*/, '')
-          .replace(/^[✓✔○●\-\*\+•›»\>]\s*/, '')
-          .replace(/^\(?\d+[\.\)\:\-]\s*/, '')
-          .replace(/^[✓✔○●\-\*\+•›»\>]\s*/, '')
-          .trim();
-      })
-      .filter((t: string) => t.length > 0);
+    const defaultCategory = category && ['S', 'NS', 'M'].includes(category) ? category : 'S';
 
-    if (cleanedTitles.length === 0) {
+    // Parse each item (string or object with title/category)
+    const cleanedItems: { title: string; category?: 'S' | 'NS' | 'M' }[] = [];
+
+    for (const item of tasks) {
+      let rawTitle = '';
+      let itemCategory: 'S' | 'NS' | 'M' | undefined = undefined;
+
+      if (typeof item === 'string') {
+        rawTitle = item.trim();
+      } else if (item && typeof item === 'object') {
+        rawTitle = typeof item.title === 'string' ? item.title.trim() : '';
+        if (item.category && ['S', 'NS', 'M'].includes(item.category)) {
+          itemCategory = item.category;
+        }
+      }
+
+      // Check for inline category prefix like [S], [NS], [M], (S), S:
+      const categoryMatch = rawTitle.match(/^\[(S|NS|M)\]\s*/i) ||
+                           rawTitle.match(/^\((S|NS|M)\)\s*/i) ||
+                           rawTitle.match(/^(S|NS|M):\s*/i);
+      if (categoryMatch) {
+        itemCategory = categoryMatch[1].toUpperCase() as 'S' | 'NS' | 'M';
+        rawTitle = rawTitle.slice(categoryMatch[0].length);
+      }
+
+      // Clean numbering, bullets, checkbox markers
+      const cleaned = rawTitle
+        .replace(/^\[[ xX]\]\s*/, '')
+        .replace(/^[✓✔○●\-\*\+•›»\>]\s*/, '')
+        .replace(/^\(?\d+[\.\)\:\-]\s*/, '')
+        .replace(/^[✓✔○●\-\*\+•›»\>]\s*/, '')
+        .trim();
+
+      if (cleaned.length > 0) {
+        cleanedItems.push({
+          title: cleaned,
+          category: itemCategory || defaultCategory,
+        });
+      }
+    }
+
+    if (cleanedItems.length === 0) {
       return res.status(400).json({ message: 'No valid task titles found in submission.' });
     }
 
-    const createdTasks = await db.tasks.createMany(listId, userId, cleanedTitles);
+    const createdTasks = await db.tasks.createMany(listId, userId, cleanedItems, defaultCategory);
 
     return res.status(201).json({
       message: `Successfully added ${createdTasks.length} tasks`,
@@ -106,7 +168,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { id } = req.params;
-    const { title, completed, order } = req.body;
+    const { title, completed, order, category } = req.body;
 
     const existing = await db.tasks.findById(id);
     if (!existing) {
@@ -117,8 +179,11 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ message: 'Access denied: Cannot modify another user\'s task.' });
     }
 
-    const updates: Partial<{ title: string; completed: boolean; order: number; completedAt: string | null }> = {};
+    const updates: Partial<{ title: string; completed: boolean; order: number; completedAt: string | null; category: 'S' | 'NS' | 'M' }> = {};
     if (title !== undefined && title.trim()) updates.title = title.trim();
+    if (category !== undefined && ['S', 'NS', 'M'].includes(category)) {
+      updates.category = category as 'S' | 'NS' | 'M';
+    }
     if (completed !== undefined) {
       const isDone = Boolean(completed);
       updates.completed = isDone;

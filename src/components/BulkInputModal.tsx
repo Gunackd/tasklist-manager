@@ -1,11 +1,12 @@
 import React, { useState, useId } from 'react';
-import { parseBulkTasks } from '../utils/parser.js';
+import { TaskCategory } from '../types/index.js';
+import { parseBulkTasksWithCategory } from '../utils/parser.js';
 import { X, Layers, Sparkles, Check, AlertCircle } from 'lucide-react';
 
 interface BulkInputModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (tasks: string[]) => Promise<void>;
+  onAdd: (tasks: { title: string; category: TaskCategory }[], category: TaskCategory) => Promise<void>;
   listTitle: string;
 }
 
@@ -31,13 +32,14 @@ export const BulkInputModal: React.FC<BulkInputModalProps> = ({
   listTitle,
 }) => {
   const [text, setText] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<TaskCategory>('S');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaId = useId();
 
   if (!isOpen) return null;
 
-  const detectedTasks = parseBulkTasks(text);
+  const detectedTasks = parseBulkTasksWithCategory(text, selectedCategory);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,7 +51,7 @@ export const BulkInputModal: React.FC<BulkInputModalProps> = ({
     try {
       setIsSubmitting(true);
       setError(null);
-      await onAdd(detectedTasks);
+      await onAdd(detectedTasks, selectedCategory);
       setText('');
       onClose();
     } catch (err: any) {
@@ -62,6 +64,18 @@ export const BulkInputModal: React.FC<BulkInputModalProps> = ({
   const handleApplyPreset = (presetText: string) => {
     setText(presetText);
     setError(null);
+  };
+
+  const getCategoryBadgeClass = (category: TaskCategory) => {
+    switch (category) {
+      case 'NS':
+        return 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 dark:border-amber-800';
+      case 'M':
+        return 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border-purple-300 dark:border-purple-800';
+      case 'S':
+      default:
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-300 dark:border-blue-800';
+    }
   };
 
   return (
@@ -103,6 +117,34 @@ export const BulkInputModal: React.FC<BulkInputModalProps> = ({
             </div>
           )}
 
+          {/* Batch Category Selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800">
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                Default Category for this Batch:
+              </label>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                You can also prefix any line with [S], [NS], or [M] for individual tasks
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {(['S', 'NS', 'M'] as TaskCategory[]).map((cat) => (
+                <button
+                  type="button"
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1 text-xs font-bold font-mono rounded-lg border transition-all ${
+                    selectedCategory === cat
+                      ? `${getCategoryBadgeClass(cat)} shadow-xs scale-105`
+                      : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  [{cat}]
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-2">
               <label
@@ -118,13 +160,13 @@ export const BulkInputModal: React.FC<BulkInputModalProps> = ({
 
             <textarea
               id={textareaId}
-              rows={7}
+              rows={6}
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
                 if (error) setError(null);
               }}
-              placeholder={`React\nMongoDB\nNode.js\nExpress.js\nRedux\nNext.js`}
+              placeholder={`Learn React\nLearn MongoDB\n[M] Practice JavaScript\n[NS] Setup Docker`}
               className="w-full p-3.5 text-sm font-mono bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               autoFocus
             />
@@ -168,13 +210,20 @@ export const BulkInputModal: React.FC<BulkInputModalProps> = ({
               </p>
             ) : (
               <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
-                {detectedTasks.slice(0, 10).map((taskTitle, idx) => (
+                {detectedTasks.slice(0, 10).map((item, idx) => (
                   <div
                     key={idx}
                     className="flex items-center gap-2 text-xs text-zinc-800 dark:text-zinc-200 py-0.5"
                   >
                     <span className="w-4 text-zinc-400 text-right font-mono">{idx + 1}.</span>
-                    <span className="truncate">{taskTitle}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-bold border ${getCategoryBadgeClass(
+                        item.category
+                      )}`}
+                    >
+                      [{item.category}]
+                    </span>
+                    <span className="truncate">{item.title}</span>
                   </div>
                 ))}
                 {detectedTasks.length > 10 && (

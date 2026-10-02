@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
-import { TaskList, Task, FilterStatus } from '../types/index.js';
+import { TaskList, Task, FilterStatus, TaskCategory } from '../types/index.js';
 import { Navbar } from '../components/Navbar.js';
 import { ProgressBar } from '../components/ProgressBar.js';
 import { TaskItem } from '../components/TaskItem.js';
@@ -33,12 +33,22 @@ export const ListDetail: React.FC = () => {
   const [list, setList] = useState<TaskList | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>('S');
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterStatus>('all');
 
   const [isLoading, setIsLoading] = useState(true);
   const [isAddingTask, setIsAddingTask] = useState(false);
+  const [isRandomizingOrder, setIsRandomizingOrder] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => {
+      setToastMessage((cur) => (cur === message ? null : cur));
+    }, 3000);
+  };
 
   // Modals
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -78,14 +88,14 @@ export const ListDetail: React.FC = () => {
     return { total, completed, percentage };
   }, [tasks]);
 
-  // Add individual task
+  // Add individual task with category
   const handleCreateSingleTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !newTaskTitle.trim()) return;
 
     try {
       setIsAddingTask(true);
-      const created = await api.createTask(id, newTaskTitle.trim());
+      const created = await api.createTask(id, newTaskTitle.trim(), newTaskCategory);
       setTasks((prev) => [...prev, created]);
       setNewTaskTitle('');
     } catch (err: any) {
@@ -95,11 +105,73 @@ export const ListDetail: React.FC = () => {
     }
   };
 
-  // Add bulk tasks
-  const handleBulkAdd = async (taskTitles: string[]) => {
+  // Add bulk tasks with category
+  const handleBulkAdd = async (
+    detectedTasks: { title: string; category: TaskCategory }[],
+    defaultCategory: TaskCategory
+  ) => {
     if (!id) return;
-    const res = await api.bulkAddTasks(id, taskTitles);
+    const res = await api.bulkAddTasks(id, detectedTasks, defaultCategory);
     setTasks((prev) => [...prev, ...res.tasks]);
+  };
+
+  // Randomize tasks order genuinely (shuffle order)
+  const handleRandomizeOrder = async () => {
+    if (!id || tasks.length <= 1 || isRandomizingOrder) return;
+
+    try {
+      setIsRandomizingOrder(true);
+
+      // Genuine Fisher-Yates shuffle
+      const shuffled = [...tasks];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+
+      // Reassign sequential order indices while preserving all task properties
+      const reordered = shuffled.map((t, idx) => ({ ...t, order: idx }));
+      setTasks(reordered);
+
+      await api.reorderTasks(
+        id,
+        reordered.map((t) => t._id)
+      );
+
+      showToast('Tasks randomized successfully');
+    } catch (err: any) {
+      console.error('Failed to randomize tasks:', err);
+      fetchListDetails();
+    } finally {
+      setIsRandomizingOrder(false);
+    }
+  };
+
+  // Inline update category
+  const handleUpdateCategory = async (taskId: string, newCategory: TaskCategory) => {
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, category: newCategory } : t))
+    );
+    try {
+      await api.updateTask(taskId, { category: newCategory });
+    } catch (err: any) {
+      console.error('Failed to update category:', err);
+    }
+  };
+
+  // Inline update task (title and/or category)
+  const handleUpdateTask = async (
+    taskId: string,
+    updates: { title?: string; category?: TaskCategory }
+  ) => {
+    setTasks((prev) =>
+      prev.map((t) => (t._id === taskId ? { ...t, ...updates } : t))
+    );
+    try {
+      await api.updateTask(taskId, updates);
+    } catch (err: any) {
+      console.error('Failed to update task:', err);
+    }
   };
 
   // Toggle task completion
@@ -322,13 +394,28 @@ export const ListDetail: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={handleRandomizeOrder}
+                disabled={tasks.length <= 1 || isRandomizingOrder}
+                title="Randomly shuffle the order of tasks in this list"
+                className="px-3 py-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800/80 rounded-xl transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+              >
+                {isRandomizingOrder ? (
+                  <div className="w-3.5 h-3.5 border-2 border-purple-600/40 border-t-purple-600 rounded-full animate-spin" />
+                ) : (
+                  <Dices className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                )}
+                <span>Randomize</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setRandomModalOpen(true)}
                 disabled={tasks.length === 0}
                 title="Pick a random task to focus on"
-                className="px-3 py-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800/80 rounded-xl transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                className="px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 rounded-xl transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
               >
-                <Dices className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                <span>Random Task</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span className="hidden sm:inline">Pick Task</span>
               </button>
 
               <button
@@ -364,9 +451,24 @@ export const ListDetail: React.FC = () => {
 
         {/* Action Controls & Input Section */}
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xs mb-6 space-y-4">
-          {/* Quick Single Task Input Form */}
-          <form onSubmit={handleCreateSingleTask} className="flex gap-2">
-            <div className="relative flex-1">
+          {/* Quick Single Task Input Form with Category Selection */}
+          <form onSubmit={handleCreateSingleTask} className="flex flex-col sm:flex-row gap-2">
+            <div className="flex items-center gap-2 flex-1">
+              {/* Category Selector */}
+              <div className="relative shrink-0">
+                <select
+                  value={newTaskCategory}
+                  onChange={(e) => setNewTaskCategory(e.target.value as TaskCategory)}
+                  aria-label="Task Category"
+                  title="Category: S, NS, or M"
+                  className="h-full py-3 pl-3 pr-7 text-xs font-bold font-mono rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-2xs"
+                >
+                  <option value="S">[S]</option>
+                  <option value="NS">[NS]</option>
+                  <option value="M">[M]</option>
+                </select>
+              </div>
+
               <input
                 type="text"
                 value={newTaskTitle}
@@ -375,14 +477,32 @@ export const ListDetail: React.FC = () => {
                 className="w-full px-4 py-3 text-sm bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               />
             </div>
-            <button
-              type="submit"
-              disabled={!newTaskTitle.trim() || isAddingTask}
-              className="px-5 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl shadow-sm shadow-blue-500/20 transition flex items-center gap-2 shrink-0"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>Add Task</span>
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={!newTaskTitle.trim() || isAddingTask}
+                className="flex-1 sm:flex-initial px-5 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl shadow-sm shadow-blue-500/20 transition flex items-center justify-center gap-2 shrink-0"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>Add Task</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRandomizeOrder}
+                disabled={tasks.length <= 1 || isRandomizingOrder}
+                title="Randomly shuffle the order of tasks in this list"
+                className="flex-1 sm:flex-initial px-4 py-3 text-sm font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800/80 disabled:opacity-40 disabled:cursor-not-allowed rounded-2xl transition flex items-center justify-center gap-1.5 shadow-2xs shrink-0"
+              >
+                {isRandomizingOrder ? (
+                  <div className="w-4 h-4 border-2 border-purple-600/40 border-t-purple-600 rounded-full animate-spin" />
+                ) : (
+                  <Dices className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                )}
+                <span>Randomize</span>
+              </button>
+            </div>
           </form>
 
           {/* Action Bar: Bulk Paste, Randomize & Clear completed */}
@@ -399,12 +519,22 @@ export const ListDetail: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setRandomModalOpen(true)}
-                disabled={tasks.length === 0}
+                onClick={handleRandomizeOrder}
+                disabled={tasks.length <= 1 || isRandomizingOrder}
                 className="px-3.5 py-2 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50 rounded-xl transition flex items-center gap-2 border border-purple-200 dark:border-purple-900/50 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Dices className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                <span>Randomize (Pick 1 Task)</span>
+                <span>Shuffle Order</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRandomModalOpen(true)}
+                disabled={tasks.length === 0}
+                className="px-3.5 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition flex items-center gap-2 border border-zinc-200 dark:border-zinc-700"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Pick 1 Task</span>
               </button>
             </div>
 
@@ -483,6 +613,8 @@ export const ListDetail: React.FC = () => {
                 totalTasks={filteredTasks.length}
                 onToggle={handleToggleTask}
                 onUpdateTitle={handleUpdateTitle}
+                onUpdateCategory={handleUpdateCategory}
+                onUpdateTask={handleUpdateTask}
                 onDelete={(taskId) => setDeleteTaskTarget(taskId)}
                 onMoveUp={index > 0 ? () => handleMoveTask(index, 'up') : undefined}
                 onMoveDown={
@@ -569,6 +701,14 @@ export const ListDetail: React.FC = () => {
         onConfirm={handleDeleteList}
         onClose={() => setConfirmDeleteList(false)}
       />
+
+      {/* Non-intrusive Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-2xl border border-zinc-700/60 dark:border-zinc-200 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 };
