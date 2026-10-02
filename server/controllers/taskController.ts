@@ -117,9 +117,13 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ message: 'Access denied: Cannot modify another user\'s task.' });
     }
 
-    const updates: Partial<{ title: string; completed: boolean; order: number }> = {};
+    const updates: Partial<{ title: string; completed: boolean; order: number; completedAt: string | null }> = {};
     if (title !== undefined && title.trim()) updates.title = title.trim();
-    if (completed !== undefined) updates.completed = Boolean(completed);
+    if (completed !== undefined) {
+      const isDone = Boolean(completed);
+      updates.completed = isDone;
+      updates.completedAt = isDone ? new Date().toISOString() : null;
+    }
     if (order !== undefined) updates.order = Number(order);
 
     const updated = await db.tasks.update(id, userId, updates);

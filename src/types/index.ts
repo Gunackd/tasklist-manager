@@ -19,6 +19,11 @@ export interface TaskList {
   createdAt: string;
   updatedAt: string;
   tasks?: Task[];
+  lastCompletedTask?: {
+    _id: string;
+    title: string;
+    completedAt?: string | null;
+  } | null;
 }
 
 export interface Task {
@@ -28,6 +33,7 @@ export interface Task {
   title: string;
   completed: boolean;
   order: number;
+  completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -12,14 +12,30 @@ export async function getLists(req: AuthenticatedRequest, res: Response) {
       lists.map(async (list) => {
         const tasks = await db.tasks.findByListId(list._id);
         const total = tasks.length;
-        const completed = tasks.filter(t => t.completed).length;
+        const completedTasksList = tasks.filter(t => t.completed);
+        const completed = completedTasksList.length;
         const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        let lastCompletedTask: { _id: string; title: string; completedAt?: string | null } | null = null;
+        if (completedTasksList.length > 0) {
+          const sorted = [...completedTasksList].sort((a, b) => {
+            const timeA = new Date(a.completedAt || a.updatedAt || a.createdAt).getTime();
+            const timeB = new Date(b.completedAt || b.updatedAt || b.createdAt).getTime();
+            return timeB - timeA;
+          });
+          lastCompletedTask = {
+            _id: sorted[0]._id,
+            title: sorted[0].title,
+            completedAt: sorted[0].completedAt || sorted[0].updatedAt || sorted[0].createdAt,
+          };
+        }
 
         return {
           ...list,
           totalTasks: total,
           completedTasks: completed,
           progress,
+          lastCompletedTask,
         };
       })
     );
@@ -76,14 +92,30 @@ export async function getListById(req: AuthenticatedRequest, res: Response) {
 
     const tasks = await db.tasks.findByListId(list._id);
     const total = tasks.length;
-    const completed = tasks.filter(t => t.completed).length;
+    const completedTasksList = tasks.filter(t => t.completed);
+    const completed = completedTasksList.length;
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    let lastCompletedTask: { _id: string; title: string; completedAt?: string | null } | null = null;
+    if (completedTasksList.length > 0) {
+      const sorted = [...completedTasksList].sort((a, b) => {
+        const timeA = new Date(a.completedAt || a.updatedAt || a.createdAt).getTime();
+        const timeB = new Date(b.completedAt || b.updatedAt || b.createdAt).getTime();
+        return timeB - timeA;
+      });
+      lastCompletedTask = {
+        _id: sorted[0]._id,
+        title: sorted[0].title,
+        completedAt: sorted[0].completedAt || sorted[0].updatedAt || sorted[0].createdAt,
+      };
+    }
 
     return res.json({
       ...list,
       totalTasks: total,
       completedTasks: completed,
       progress,
+      lastCompletedTask,
       tasks,
     });
   } catch (err: any) {

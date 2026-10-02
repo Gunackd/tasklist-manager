@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface ListCardProps {
@@ -186,6 +187,29 @@ export const ListCard: React.FC<ListCardProps> = ({
               </>
             )}
           </div>
+        </div>
+
+        {/* Last Completed Task under tasklist name */}
+        <div className="mb-3">
+          {list.lastCompletedTask ? (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900/50 text-xs"
+              title={`Last completed task: "${list.lastCompletedTask.title}"`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 shrink-0">
+                Last completed:
+              </span>
+              <span className="truncate text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+                {list.lastCompletedTask.title}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-800/60 text-xs text-zinc-400 dark:text-zinc-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600 shrink-0" />
+              <span className="text-[11px]">No completed tasks yet</span>
+            </div>
+          )}
         </div>
 
         {/* Description */}

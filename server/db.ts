@@ -33,6 +33,7 @@ export interface TaskDoc {
   title: string;
   completed: boolean;
   order: number;
+  completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,6 +119,7 @@ const MTaskSchema = new mongoose.Schema({
   title: { type: String, required: true },
   completed: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
+  completedAt: { type: String, default: null },
 }, { timestamps: true });
 
 export let MUser: mongoose.Model<any>;
