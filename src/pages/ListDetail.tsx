@@ -188,7 +188,15 @@ export const ListDetail: React.FC = () => {
     const nextCompleted = !task.completed;
     // Optimistic update
     setTasks((prev) =>
-      prev.map((t) => (t._id === task._id ? { ...t, completed: nextCompleted } : t))
+      prev.map((t) =>
+        t._id === task._id
+          ? {
+              ...t,
+              completed: nextCompleted,
+              inProgress: nextCompleted ? false : t.inProgress,
+            }
+          : t
+      )
     );
 
     // If reaching 100% completion, trigger celebratory confetti!
@@ -204,11 +212,41 @@ export const ListDetail: React.FC = () => {
     }
 
     try {
-      await api.updateTask(task._id, { completed: nextCompleted });
+      await api.updateTask(task._id, {
+        completed: nextCompleted,
+        ...(nextCompleted ? { inProgress: false } : {}),
+      });
     } catch (err: any) {
       // Revert on failure
       setTasks((prev) =>
         prev.map((t) => (t._id === task._id ? { ...t, completed: task.completed } : t))
+      );
+    }
+  };
+
+  // Toggle task in-progress status
+  const handleToggleProgress = async (task: Task) => {
+    const nextInProgress = !task.inProgress;
+    setTasks((prev) =>
+      prev.map((t) =>
+        t._id === task._id
+          ? {
+              ...t,
+              inProgress: nextInProgress,
+              completed: nextInProgress ? false : t.completed,
+            }
+          : t
+      )
+    );
+
+    try {
+      await api.updateTask(task._id, {
+        inProgress: nextInProgress,
+        ...(nextInProgress ? { completed: false } : {}),
+      });
+    } catch (err: any) {
+      setTasks((prev) =>
+        prev.map((t) => (t._id === task._id ? { ...t, inProgress: task.inProgress } : t))
       );
     }
   };
@@ -631,6 +669,7 @@ export const ListDetail: React.FC = () => {
                 index={index}
                 totalTasks={filteredTasks.length}
                 onToggle={handleToggleTask}
+                onToggleProgress={handleToggleProgress}
                 onUpdateTitle={handleUpdateTitle}
                 onUpdateCategories={handleUpdateCategories}
                 onUpdateTask={handleUpdateTask}

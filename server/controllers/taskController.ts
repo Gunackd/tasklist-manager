@@ -17,8 +17,10 @@ export async function getAllTasks(req: AuthenticatedRequest, res: Response) {
       categories = req.query.category.split(',').map(c => c.trim()).filter(Boolean);
     }
 
+    const includeCompleted = req.query.includeCompleted === 'true';
+
     const [tasks, lists] = await Promise.all([
-      db.tasks.findByUserId(userId, categories),
+      db.tasks.findByUserId(userId, categories, includeCompleted),
       db.taskLists.findByUserId(userId),
     ]);
 
@@ -204,7 +206,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { id } = req.params;
-    const { title, completed, order, categories, category } = req.body;
+    const { title, completed, order, categories, category, inProgress } = req.body;
 
     const existing = await db.tasks.findById(id);
     if (!existing) {
@@ -218,6 +220,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
     const updates: Partial<{
       title: string;
       completed: boolean;
+      inProgress: boolean;
       order: number;
       completedAt: string | null;
       categories: ('S' | 'NS' | 'M' | 'A')[];
@@ -234,6 +237,9 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
       updates.category = category as 'S' | 'NS' | 'M' | 'A';
     }
 
+    if (inProgress !== undefined) {
+      updates.inProgress = Boolean(inProgress);
+    }
     if (completed !== undefined) {
       const isDone = Boolean(completed);
       updates.completed = isDone;

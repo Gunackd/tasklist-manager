@@ -37,6 +37,7 @@ export interface Task {
   categories: TaskCategory[];
   category?: TaskCategory;
   completed: boolean;
+  inProgress?: boolean;
   order: number;
   completedAt?: string | null;
   taskListTitle?: string;

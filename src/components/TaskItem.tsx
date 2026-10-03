@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Task, TaskCategory, ALL_CATEGORIES } from '../types/index.js';
 import {
   Check,
+  Clock,
   Trash2,
   Edit2,
   ChevronUp,
@@ -14,10 +15,11 @@ interface TaskItemProps {
   index: number;
   totalTasks?: number;
   onToggle: (task: Task) => void;
+  onToggleProgress?: (task: Task) => void;
   onUpdateTitle?: (taskId: string, newTitle: string) => Promise<void>;
   onUpdateCategory?: (taskId: string, newCategory: TaskCategory) => Promise<void>;
   onUpdateCategories?: (taskId: string, newCategories: TaskCategory[]) => Promise<void>;
-  onUpdateTask?: (taskId: string, updates: { title?: string; categories?: TaskCategory[]; category?: TaskCategory }) => Promise<void>;
+  onUpdateTask?: (taskId: string, updates: { title?: string; inProgress?: boolean; categories?: TaskCategory[]; category?: TaskCategory }) => Promise<void>;
   onDelete: (taskId: string) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -49,6 +51,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
   index,
   totalTasks = 1,
   onToggle,
+  onToggleProgress,
   onUpdateTitle,
   onUpdateCategory,
   onUpdateCategories,
@@ -208,15 +211,41 @@ export const TaskItem: React.FC<TaskItemProps> = ({
         type="button"
         onClick={() => onToggle(task)}
         aria-label={task.completed ? 'Mark as incomplete' : 'Mark as complete'}
-        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all shrink-0 ${
+        title={task.completed ? 'Completed (Click to mark incomplete)' : 'Mark as complete'}
+        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all shrink-0 cursor-pointer ${
           task.completed
             ? 'bg-emerald-500 text-white shadow-xs'
-            : 'border-2 border-zinc-300 dark:border-zinc-600 hover:border-blue-500 text-transparent hover:text-blue-500'
+            : 'border-2 border-zinc-300 dark:border-zinc-600 hover:border-emerald-500 text-transparent hover:text-emerald-500'
         }`}
       >
         <Check
           className={`w-3.5 h-3.5 stroke-[3] ${
             task.completed ? 'opacity-100' : 'opacity-0 hover:opacity-100'
+          }`}
+        />
+      </button>
+
+      {/* Progress button (In Progress toggle) */}
+      <button
+        type="button"
+        onClick={() => {
+          if (onToggleProgress) {
+            onToggleProgress(task);
+          } else if (onUpdateTask) {
+            onUpdateTask(task._id, { inProgress: !task.inProgress });
+          }
+        }}
+        aria-label={task.inProgress ? 'In progress (click to clear)' : 'Mark as in progress'}
+        title={task.inProgress ? 'In Progress: Ongoing work (click to clear in-progress status)' : 'Mark task as In Progress'}
+        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+          task.inProgress && !task.completed
+            ? 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/30'
+            : 'border-2 border-zinc-300 dark:border-zinc-600 hover:border-amber-500 text-transparent hover:text-amber-500'
+        }`}
+      >
+        <Clock
+          className={`w-3.5 h-3.5 stroke-[2.5] ${
+            task.inProgress && !task.completed ? 'opacity-100' : 'opacity-0 hover:opacity-100'
           }`}
         />
       </button>
@@ -321,6 +350,13 @@ export const TaskItem: React.FC<TaskItemProps> = ({
             >
               {task.title}
             </span>
+
+            {task.inProgress && !task.completed && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0">
+                <Clock className="w-2.5 h-2.5 stroke-[2.5]" />
+                <span>In Progress</span>
+              </span>
+            )}
 
             {showListBadge && task.taskListTitle && (
               <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded-full border border-zinc-200 dark:border-zinc-700/60 shrink-0">

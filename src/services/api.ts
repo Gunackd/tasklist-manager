@@ -179,7 +179,14 @@ export const api = {
 
   async updateTask(
     id: string,
-    updates: Partial<{ title: string; completed: boolean; order: number; categories: TaskCategory[]; category: TaskCategory }>
+    updates: Partial<{
+      title: string;
+      completed: boolean;
+      inProgress: boolean;
+      order: number;
+      categories: TaskCategory[];
+      category: TaskCategory;
+    }>
   ) {
     return request<Task>(`/api/tasks/${id}`, {
       method: 'PUT',

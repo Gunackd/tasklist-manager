@@ -34,6 +34,7 @@ export interface TaskDoc {
   categories?: ('S' | 'NS' | 'M' | 'A')[];
   category?: 'S' | 'NS' | 'M' | 'A';
   completed: boolean;
+  inProgress?: boolean;
   order: number;
   completedAt?: string | null;
   createdAt: string;
@@ -132,6 +133,7 @@ const MTaskSchema = new mongoose.Schema({
   categories: { type: [String], default: ['S'], index: true },
   category: { type: String, default: 'S', index: true },
   completed: { type: Boolean, default: false },
+  inProgress: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
   completedAt: { type: String, default: null },
 }, { timestamps: true });
@@ -414,7 +416,11 @@ export const db = {
       return { ...found, categories: cats, category: cats[0] || 'S' };
     },
 
-    async findByUserId(userId: string, categories?: string[] | string): Promise<TaskDoc[]> {
+    async findByUserId(
+      userId: string,
+      categories?: string[] | string,
+      includeCompleted: boolean = false
+    ): Promise<TaskDoc[]> {
       let validCategories: ('S' | 'NS' | 'M' | 'A')[] = [];
       if (Array.isArray(categories)) {
         validCategories = categories.filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c)) as any;
@@ -427,6 +433,9 @@ export const db = {
 
       if (isMongoConnected) {
         const filter: any = { userId };
+        if (!includeCompleted) {
+          filter.completed = false;
+        }
         if (validCategories.length > 0) {
           const orConditions: any[] = [
             { categories: { $in: validCategories } },
@@ -452,6 +461,7 @@ export const db = {
       return memoryDb.tasks
         .filter(t => {
           if (t.userId !== userId) return false;
+          if (!includeCompleted && t.completed) return false;
           if (validCategories.length === 0) return true;
           const cats = normalizeTaskCategories(t);
           return validCategories.some(c => cats.includes(c));
@@ -558,6 +568,21 @@ export const db = {
     async update(id: string, userId: string, updates: Partial<TaskDoc>): Promise<TaskDoc | null> {
       const now = new Date().toISOString();
       const safeUpdates: any = { ...updates };
+      if (updates.inProgress !== undefined) {
+        const isProg = Boolean(updates.inProgress);
+        safeUpdates.inProgress = isProg;
+        if (isProg && updates.completed === undefined) {
+          safeUpdates.completed = false;
+          safeUpdates.completedAt = null;
+        }
+      }
+      if (updates.completed !== undefined) {
+        const isDone = Boolean(updates.completed);
+        safeUpdates.completed = isDone;
+        if (isDone && updates.inProgress === undefined) {
+          safeUpdates.inProgress = false;
+        }
+      }
       if (updates.categories !== undefined) {
         const cats = normalizeTaskCategories({ categories: updates.categories });
         safeUpdates.categories = cats;

@@ -25,6 +25,7 @@ import {
   Dices,
   RotateCcw,
   Check,
+  Clock,
   X,
 } from 'lucide-react';
 
@@ -77,8 +78,10 @@ export const Dashboard: React.FC = () => {
     try {
       setIsLoadingCategoryTasks(true);
       const tasks = await api.getAllTasks(cats);
-      categoryCacheRef.current[cacheKey] = tasks;
-      setCategoryTasks(tasks);
+      // Do not add completed tasks in the task category filter
+      const activeTasks = tasks.filter((t) => !t.completed);
+      categoryCacheRef.current[cacheKey] = activeTasks;
+      setCategoryTasks(activeTasks);
     } catch (err: any) {
       console.error('Failed to load category tasks:', err);
     } finally {
@@ -175,8 +178,15 @@ export const Dashboard: React.FC = () => {
   // Category view task actions
   const handleToggleCategoryTask = async (task: Task) => {
     const nextCompleted = !task.completed;
+    // Don't add/keep completed tasks in the task category filter
     setCategoryTasks((prev) => {
-      const updated = prev.map((t) => (t._id === task._id ? { ...t, completed: nextCompleted } : t));
+      let updated: Task[];
+      if (nextCompleted) {
+        // Task completed -> immediately remove from category filter tasks
+        updated = prev.filter((t) => t._id !== task._id);
+      } else {
+        updated = prev.map((t) => (t._id === task._id ? { ...t, completed: false } : t));
+      }
       const cacheKey = selectedCategories.slice().sort().join(',');
       if (cacheKey) {
         categoryCacheRef.current[cacheKey] = updated;
@@ -185,7 +195,11 @@ export const Dashboard: React.FC = () => {
     });
 
     if (pickedRandomTask && pickedRandomTask._id === task._id) {
-      setPickedRandomTask((prev) => (prev ? { ...prev, completed: nextCompleted } : null));
+      if (nextCompleted) {
+        setPickedRandomTask(null);
+      } else {
+        setPickedRandomTask((prev) => (prev ? { ...prev, completed: false } : null));
+      }
     }
 
     try {
@@ -193,12 +207,38 @@ export const Dashboard: React.FC = () => {
       // Refresh list progress quietly
       api.getLists().then(setLists).catch(() => {});
     } catch (err) {
-      setCategoryTasks((prev) =>
-        prev.map((t) => (t._id === task._id ? { ...t, completed: task.completed } : t))
+      // Revert if error
+      fetchCategoryTasks(selectedCategories, true);
+    }
+  };
+
+  const handleToggleCategoryProgress = async (task: Task) => {
+    const nextInProgress = !task.inProgress;
+    setCategoryTasks((prev) => {
+      const updated = prev.map((t) =>
+        t._id === task._id ? { ...t, inProgress: nextInProgress, completed: false } : t
       );
-      if (pickedRandomTask && pickedRandomTask._id === task._id) {
-        setPickedRandomTask((prev) => (prev ? { ...prev, completed: task.completed } : null));
+      const cacheKey = selectedCategories.slice().sort().join(',');
+      if (cacheKey) {
+        categoryCacheRef.current[cacheKey] = updated;
       }
+      return updated;
+    });
+
+    if (pickedRandomTask && pickedRandomTask._id === task._id) {
+      setPickedRandomTask((prev) =>
+        prev ? { ...prev, inProgress: nextInProgress, completed: false } : null
+      );
+    }
+
+    try {
+      await api.updateTask(task._id, {
+        inProgress: nextInProgress,
+        ...(nextInProgress ? { completed: false } : {}),
+      });
+      api.getLists().then(setLists).catch(() => {});
+    } catch (err) {
+      console.error('Failed to update progress status:', err);
     }
   };
 
@@ -256,16 +296,18 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  // Group category tasks by list
+  // Group category tasks by list (only uncompleted tasks)
   const groupedCategoryTasks = useMemo(() => {
     const map = new Map<string, Task[]>();
-    categoryTasks.forEach((t) => {
-      const listId = t.taskListId;
-      if (!map.has(listId)) {
-        map.set(listId, []);
-      }
-      map.get(listId)!.push(t);
-    });
+    categoryTasks
+      .filter((t) => !t.completed)
+      .forEach((t) => {
+        const listId = t.taskListId;
+        if (!map.has(listId)) {
+          map.set(listId, []);
+        }
+        map.get(listId)!.push(t);
+      });
 
     const groups: { listId: string; listTitle: string; listColor?: string; tasks: Task[] }[] = [];
 
@@ -484,7 +526,7 @@ export const Dashboard: React.FC = () => {
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
               {selectedCategories.length === 0
                 ? `${filteredLists.length} ${filteredLists.length === 1 ? 'list' : 'lists'} available`
-                : `Showing tasks matching ${selectedCategories.map((c) => `[${c}]`).join(' or ')} from every task list`}
+                : `Showing uncompleted tasks matching ${selectedCategories.map((c) => `[${c}]`).join(' or ')} from every task list (completed tasks excluded)`}
             </p>
           </div>
 
@@ -571,7 +613,7 @@ export const Dashboard: React.FC = () => {
                   ))}
                 </div>
                 <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
-                  • {allFilteredTasks.length} {allFilteredTasks.length === 1 ? 'task' : 'tasks'} found across{' '}
+                  • {allFilteredTasks.length} active {allFilteredTasks.length === 1 ? 'task' : 'tasks'} (completed tasks excluded) across{' '}
                   {filteredGroupedTasks.length} {filteredGroupedTasks.length === 1 ? 'list' : 'lists'}
                 </span>
               </div>
@@ -642,18 +684,35 @@ export const Dashboard: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-purple-200/70 dark:border-purple-800/60">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {/* Completed Checkbox button */}
                     <button
                       type="button"
                       onClick={() => handleToggleCategoryTask(pickedRandomTask)}
                       aria-label={pickedRandomTask.completed ? 'Mark incomplete' : 'Mark complete'}
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition shrink-0 ${
+                      title={pickedRandomTask.completed ? 'Completed (Click to mark incomplete)' : 'Mark as complete'}
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition shrink-0 cursor-pointer ${
                         pickedRandomTask.completed
                           ? 'bg-emerald-500 text-white shadow-xs'
-                          : 'border-2 border-zinc-400 dark:border-zinc-500 hover:border-purple-500 text-transparent hover:text-purple-500'
+                          : 'border-2 border-zinc-400 dark:border-zinc-500 hover:border-emerald-500 text-transparent hover:text-emerald-500'
                       }`}
                     >
                       <Check className={`w-4 h-4 stroke-[3] ${pickedRandomTask.completed ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`} />
+                    </button>
+
+                    {/* Progress button */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCategoryProgress(pickedRandomTask)}
+                      aria-label={pickedRandomTask.inProgress ? 'In progress (click to clear)' : 'Mark as in progress'}
+                      title={pickedRandomTask.inProgress ? 'In Progress: Currently working on this (click to clear)' : 'Mark as In Progress'}
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition shrink-0 cursor-pointer ${
+                        pickedRandomTask.inProgress && !pickedRandomTask.completed
+                          ? 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/30'
+                          : 'border-2 border-zinc-400 dark:border-zinc-500 hover:border-amber-500 text-transparent hover:text-amber-500'
+                      }`}
+                    >
+                      <Clock className={`w-4 h-4 stroke-[2.5] ${pickedRandomTask.inProgress && !pickedRandomTask.completed ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`} />
                     </button>
 
                     <div className="min-w-0">
@@ -749,6 +808,7 @@ export const Dashboard: React.FC = () => {
                           index={idx}
                           totalTasks={group.tasks.length}
                           onToggle={handleToggleCategoryTask}
+                          onToggleProgress={handleToggleCategoryProgress}
                           onUpdateTitle={async (taskId, title) => handleUpdateCategoryTask(taskId, { title })}
                           onUpdateCategory={async (taskId, cat) => handleUpdateCategoryTask(taskId, { categories: [cat], category: cat })}
                           onUpdateCategories={async (taskId, cats) => handleUpdateCategoryTask(taskId, { categories: cats, category: cats[0] })}
@@ -767,12 +827,12 @@ export const Dashboard: React.FC = () => {
                   <ListTodo className="w-6 h-6" />
                 </div>
                 <h3 className="text-base font-bold text-zinc-900 dark:text-white">
-                  No tasks found with categories {selectedCategories.map((c) => `[${c}]`).join(' ')}
+                  No active tasks found with categories {selectedCategories.map((c) => `[${c}]`).join(' ')}
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm mx-auto">
                   {searchQuery
-                    ? 'No tasks matched your search query in this category filter.'
-                    : 'None of your tasks currently have these categories. You can enable them on tasks inside your task lists.'}
+                    ? 'No active tasks matched your search query in this category filter.'
+                    : 'None of your active uncompleted tasks currently have these categories. (Completed tasks are excluded from the category filter).'}
                 </p>
                 <button
                   type="button"
