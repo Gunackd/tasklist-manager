@@ -5,10 +5,20 @@ import { AuthenticatedRequest } from '../middleware/auth.js';
 export async function getAllTasks(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
-    const category = typeof req.query.category === 'string' ? req.query.category.trim() : undefined;
+
+    let categories: string[] | undefined = undefined;
+    if (req.query.categories) {
+      if (Array.isArray(req.query.categories)) {
+        categories = req.query.categories.map(c => String(c).trim());
+      } else if (typeof req.query.categories === 'string') {
+        categories = req.query.categories.split(',').map(c => c.trim()).filter(Boolean);
+      }
+    } else if (typeof req.query.category === 'string' && req.query.category.trim() && req.query.category !== 'all') {
+      categories = req.query.category.split(',').map(c => c.trim()).filter(Boolean);
+    }
 
     const [tasks, lists] = await Promise.all([
-      db.tasks.findByUserId(userId, category),
+      db.tasks.findByUserId(userId, categories),
       db.taskLists.findByUserId(userId),
     ]);
 
@@ -16,9 +26,11 @@ export async function getAllTasks(req: AuthenticatedRequest, res: Response) {
 
     const enrichedTasks = tasks.map(t => {
       const listInfo = listMap.get(t.taskListId);
+      const cats = Array.isArray(t.categories) && t.categories.length > 0 ? t.categories : [t.category || 'S'];
       return {
         ...t,
-        category: t.category || 'S',
+        categories: cats,
+        category: cats[0] || 'S',
         taskListTitle: listInfo?.title || 'Unknown List',
         taskListColor: listInfo?.color || 'blue',
       };
@@ -57,7 +69,7 @@ export async function createTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { listId } = req.params;
-    const { title, category } = req.body;
+    const { title, categories, category } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ message: 'Task title is required.' });
@@ -71,13 +83,23 @@ export async function createTask(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ message: 'Access denied: Cannot add task to another user\'s list.' });
     }
 
-    const validCategory = category && ['S', 'NS', 'M'].includes(category) ? category : 'S';
+    let parsedCategories: ('S' | 'NS' | 'M' | 'A')[] = [];
+    if (Array.isArray(categories)) {
+      parsedCategories = categories.filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c));
+    } else if (category && ['S', 'NS', 'M', 'A'].includes(category)) {
+      parsedCategories = [category];
+    }
+
+    if (parsedCategories.length === 0) {
+      parsedCategories = ['S'];
+    }
 
     const task = await db.tasks.create({
       taskListId: listId,
       userId,
       title: title.trim(),
-      category: validCategory,
+      categories: parsedCategories,
+      category: parsedCategories[0] || 'S',
     });
 
     return res.status(201).json(task);
@@ -91,7 +113,7 @@ export async function bulkAddTasks(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { listId } = req.params;
-    const { tasks, category } = req.body; // Array of strings or { title, category } objects
+    const { tasks, categories, category } = req.body; // Array of strings or { title, categories } objects
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return res.status(400).json({ message: 'Expected a non-empty array of task titles.' });
@@ -105,31 +127,45 @@ export async function bulkAddTasks(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ message: 'Access denied: Cannot add tasks to another user\'s list.' });
     }
 
-    const defaultCategory = category && ['S', 'NS', 'M'].includes(category) ? category : 'S';
+    let defaultCategories: ('S' | 'NS' | 'M' | 'A')[] = [];
+    if (Array.isArray(categories)) {
+      defaultCategories = categories.filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c));
+    } else if (category && ['S', 'NS', 'M', 'A'].includes(category)) {
+      defaultCategories = [category];
+    }
+    if (defaultCategories.length === 0) {
+      defaultCategories = ['S'];
+    }
 
-    // Parse each item (string or object with title/category)
-    const cleanedItems: { title: string; category?: 'S' | 'NS' | 'M' }[] = [];
+    // Parse each item (string or object with title/categories)
+    const cleanedItems: { title: string; categories?: ('S' | 'NS' | 'M' | 'A')[] }[] = [];
 
     for (const item of tasks) {
       let rawTitle = '';
-      let itemCategory: 'S' | 'NS' | 'M' | undefined = undefined;
+      let itemCategories: ('S' | 'NS' | 'M' | 'A')[] | undefined = undefined;
 
       if (typeof item === 'string') {
         rawTitle = item.trim();
       } else if (item && typeof item === 'object') {
         rawTitle = typeof item.title === 'string' ? item.title.trim() : '';
-        if (item.category && ['S', 'NS', 'M'].includes(item.category)) {
-          itemCategory = item.category;
+        if (Array.isArray(item.categories)) {
+          itemCategories = item.categories.filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c));
+        } else if (item.category && ['S', 'NS', 'M', 'A'].includes(item.category)) {
+          itemCategories = [item.category];
         }
       }
 
-      // Check for inline category prefix like [S], [NS], [M], (S), S:
-      const categoryMatch = rawTitle.match(/^\[(S|NS|M)\]\s*/i) ||
-                           rawTitle.match(/^\((S|NS|M)\)\s*/i) ||
-                           rawTitle.match(/^(S|NS|M):\s*/i);
-      if (categoryMatch) {
-        itemCategory = categoryMatch[1].toUpperCase() as 'S' | 'NS' | 'M';
-        rawTitle = rawTitle.slice(categoryMatch[0].length);
+      // Check for inline bracketed categories e.g. [S, M], [S][NS], [A]
+      const bracketMatch = rawTitle.match(/^\[([S|NS|M|A|\s|,]+)\]\s*/i);
+      if (bracketMatch) {
+        const found = bracketMatch[1]
+          .split(/[,\s]+/)
+          .map(s => s.trim().toUpperCase())
+          .filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c)) as ('S' | 'NS' | 'M' | 'A')[];
+        if (found.length > 0) {
+          itemCategories = found;
+          rawTitle = rawTitle.slice(bracketMatch[0].length);
+        }
       }
 
       // Clean numbering, bullets, checkbox markers
@@ -143,7 +179,7 @@ export async function bulkAddTasks(req: AuthenticatedRequest, res: Response) {
       if (cleaned.length > 0) {
         cleanedItems.push({
           title: cleaned,
-          category: itemCategory || defaultCategory,
+          categories: itemCategories && itemCategories.length > 0 ? itemCategories : defaultCategories,
         });
       }
     }
@@ -152,7 +188,7 @@ export async function bulkAddTasks(req: AuthenticatedRequest, res: Response) {
       return res.status(400).json({ message: 'No valid task titles found in submission.' });
     }
 
-    const createdTasks = await db.tasks.createMany(listId, userId, cleanedItems, defaultCategory);
+    const createdTasks = await db.tasks.createMany(listId, userId, cleanedItems, defaultCategories);
 
     return res.status(201).json({
       message: `Successfully added ${createdTasks.length} tasks`,
@@ -168,7 +204,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { id } = req.params;
-    const { title, completed, order, category } = req.body;
+    const { title, completed, order, categories, category } = req.body;
 
     const existing = await db.tasks.findById(id);
     if (!existing) {
@@ -179,11 +215,25 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
       return res.status(403).json({ message: 'Access denied: Cannot modify another user\'s task.' });
     }
 
-    const updates: Partial<{ title: string; completed: boolean; order: number; completedAt: string | null; category: 'S' | 'NS' | 'M' }> = {};
+    const updates: Partial<{
+      title: string;
+      completed: boolean;
+      order: number;
+      completedAt: string | null;
+      categories: ('S' | 'NS' | 'M' | 'A')[];
+      category: 'S' | 'NS' | 'M' | 'A';
+    }> = {};
+
     if (title !== undefined && title.trim()) updates.title = title.trim();
-    if (category !== undefined && ['S', 'NS', 'M'].includes(category)) {
-      updates.category = category as 'S' | 'NS' | 'M';
+    if (categories !== undefined && Array.isArray(categories)) {
+      const valid = categories.filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c));
+      updates.categories = valid.length > 0 ? valid : ['S'];
+      updates.category = updates.categories[0] || 'S';
+    } else if (category !== undefined && ['S', 'NS', 'M', 'A'].includes(category)) {
+      updates.categories = [category];
+      updates.category = category as 'S' | 'NS' | 'M' | 'A';
     }
+
     if (completed !== undefined) {
       const isDone = Boolean(completed);
       updates.completed = isDone;

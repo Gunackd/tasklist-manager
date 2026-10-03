@@ -26,14 +26,16 @@ export interface TaskList {
   } | null;
 }
 
-export type TaskCategory = 'S' | 'NS' | 'M';
+export type TaskCategory = 'S' | 'NS' | 'M' | 'A';
+export const ALL_CATEGORIES: TaskCategory[] = ['S', 'NS', 'M', 'A'];
 
 export interface Task {
   _id: string;
   taskListId: string;
   userId: string;
   title: string;
-  category: TaskCategory;
+  categories: TaskCategory[];
+  category?: TaskCategory;
   completed: boolean;
   order: number;
   completedAt?: string | null;

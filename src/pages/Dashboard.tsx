@@ -1,14 +1,16 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext.js';
 import { api } from '../services/api.js';
-import { TaskList, Task, TaskCategory } from '../types/index.js';
+import { TaskList, Task, TaskCategory, ALL_CATEGORIES } from '../types/index.js';
 import { Navbar } from '../components/Navbar.js';
 import { ListCard } from '../components/ListCard.js';
-import { TaskItem } from '../components/TaskItem.js';
+import { TaskItem, getCategoryActiveBadgeClass } from '../components/TaskItem.js';
 import { CreateListModal } from '../components/CreateListModal.js';
 import { EditListModal } from '../components/EditListModal.js';
 import { ConfirmModal } from '../components/ConfirmModal.js';
+import { RandomTaskModal } from '../components/RandomTaskModal.js';
 import {
   Plus,
   Search,
@@ -20,16 +22,24 @@ import {
   Sparkles,
   ArrowRight,
   Filter,
+  Dices,
+  RotateCcw,
+  Check,
+  X,
 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [lists, setLists] = useState<TaskList[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'S' | 'NS' | 'M'>('all');
+  const [selectedCategories, setSelectedCategories] = useState<TaskCategory[]>([]);
   const [categoryTasks, setCategoryTasks] = useState<Task[]>([]);
   const [isLoadingCategoryTasks, setIsLoadingCategoryTasks] = useState(false);
   const categoryCacheRef = useRef<Record<string, Task[]>>({});
+
+  // Randomized task pick across all lists
+  const [pickedRandomTask, setPickedRandomTask] = useState<Task | null>(null);
+  const [randomModalOpen, setRandomModalOpen] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -54,15 +64,20 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const fetchCategoryTasks = async (cat: 'S' | 'NS' | 'M', force = false) => {
-    if (!force && categoryCacheRef.current[cat]) {
-      setCategoryTasks(categoryCacheRef.current[cat]);
+  const fetchCategoryTasks = async (cats: TaskCategory[], force = false) => {
+    if (cats.length === 0) {
+      setCategoryTasks([]);
+      return;
+    }
+    const cacheKey = cats.slice().sort().join(',');
+    if (!force && categoryCacheRef.current[cacheKey]) {
+      setCategoryTasks(categoryCacheRef.current[cacheKey]);
       return;
     }
     try {
       setIsLoadingCategoryTasks(true);
-      const tasks = await api.getAllTasks(cat);
-      categoryCacheRef.current[cat] = tasks;
+      const tasks = await api.getAllTasks(cats);
+      categoryCacheRef.current[cacheKey] = tasks;
       setCategoryTasks(tasks);
     } catch (err: any) {
       console.error('Failed to load category tasks:', err);
@@ -76,10 +91,28 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (categoryFilter !== 'all') {
-      fetchCategoryTasks(categoryFilter);
+    if (selectedCategories.length > 0) {
+      fetchCategoryTasks(selectedCategories);
+    } else {
+      setCategoryTasks([]);
+      setPickedRandomTask(null);
     }
-  }, [categoryFilter]);
+  }, [selectedCategories]);
+
+  const toggleCategory = (cat: TaskCategory) => {
+    setSelectedCategories((prev) => {
+      if (prev.includes(cat)) {
+        return prev.filter((c) => c !== cat);
+      } else {
+        return [...prev, cat];
+      }
+    });
+  };
+
+  const clearCategoryFilter = () => {
+    setSelectedCategories([]);
+    setPickedRandomTask(null);
+  };
 
   const handleCreateList = async (data: { title: string; description: string; color: string }) => {
     const newList = await api.createList(data);
@@ -100,8 +133,8 @@ export const Dashboard: React.FC = () => {
     setDeletingList(null);
     // Invalidate category cache if list was removed
     categoryCacheRef.current = {};
-    if (categoryFilter !== 'all') {
-      fetchCategoryTasks(categoryFilter, true);
+    if (selectedCategories.length > 0) {
+      fetchCategoryTasks(selectedCategories, true);
     }
   };
 
@@ -144,11 +177,16 @@ export const Dashboard: React.FC = () => {
     const nextCompleted = !task.completed;
     setCategoryTasks((prev) => {
       const updated = prev.map((t) => (t._id === task._id ? { ...t, completed: nextCompleted } : t));
-      if (categoryFilter !== 'all') {
-        categoryCacheRef.current[categoryFilter] = updated;
+      const cacheKey = selectedCategories.slice().sort().join(',');
+      if (cacheKey) {
+        categoryCacheRef.current[cacheKey] = updated;
       }
       return updated;
     });
+
+    if (pickedRandomTask && pickedRandomTask._id === task._id) {
+      setPickedRandomTask((prev) => (prev ? { ...prev, completed: nextCompleted } : null));
+    }
 
     try {
       await api.updateTask(task._id, { completed: nextCompleted });
@@ -158,24 +196,36 @@ export const Dashboard: React.FC = () => {
       setCategoryTasks((prev) =>
         prev.map((t) => (t._id === task._id ? { ...t, completed: task.completed } : t))
       );
+      if (pickedRandomTask && pickedRandomTask._id === task._id) {
+        setPickedRandomTask((prev) => (prev ? { ...prev, completed: task.completed } : null));
+      }
     }
   };
 
   const handleUpdateCategoryTask = async (
     taskId: string,
-    updates: { title?: string; category?: TaskCategory }
+    updates: { title?: string; categories?: TaskCategory[]; category?: TaskCategory }
   ) => {
     setCategoryTasks((prev) => {
       const updated = prev.map((t) => (t._id === taskId ? { ...t, ...updates } : t));
       const filtered =
-        categoryFilter !== 'all' && updates.category && updates.category !== categoryFilter
-          ? updated.filter((t) => t._id !== taskId)
+        selectedCategories.length > 0 && updates.categories
+          ? updated.filter((t) =>
+              t._id === taskId
+                ? updates.categories!.some((c) => selectedCategories.includes(c))
+                : true
+            )
           : updated;
-      if (categoryFilter !== 'all') {
-        categoryCacheRef.current[categoryFilter] = filtered;
+      const cacheKey = selectedCategories.slice().sort().join(',');
+      if (cacheKey) {
+        categoryCacheRef.current[cacheKey] = filtered;
       }
       return filtered;
     });
+
+    if (pickedRandomTask && pickedRandomTask._id === taskId) {
+      setPickedRandomTask((prev) => (prev ? { ...prev, ...updates } : null));
+    }
 
     try {
       await api.updateTask(taskId, updates);
@@ -187,11 +237,16 @@ export const Dashboard: React.FC = () => {
   const handleDeleteCategoryTask = async (taskId: string) => {
     setCategoryTasks((prev) => {
       const filtered = prev.filter((t) => t._id !== taskId);
-      if (categoryFilter !== 'all') {
-        categoryCacheRef.current[categoryFilter] = filtered;
+      const cacheKey = selectedCategories.slice().sort().join(',');
+      if (cacheKey) {
+        categoryCacheRef.current[cacheKey] = filtered;
       }
       return filtered;
     });
+
+    if (pickedRandomTask && pickedRandomTask._id === taskId) {
+      setPickedRandomTask(null);
+    }
 
     try {
       await api.deleteTask(taskId);
@@ -255,6 +310,35 @@ export const Dashboard: React.FC = () => {
       }))
       .filter((g) => g.tasks.length > 0);
   }, [groupedCategoryTasks, searchQuery]);
+
+  // Flattened all tasks from the filtered list across all task lists
+  const allFilteredTasks = useMemo(() => {
+    return filteredGroupedTasks.flatMap((g) => g.tasks);
+  }, [filteredGroupedTasks]);
+
+  // Randomize one task across all task lists in the filtered list
+  const handleRandomizeTaskAcrossLists = () => {
+    if (allFilteredTasks.length === 0) return;
+    const randomIndex = Math.floor(Math.random() * allFilteredTasks.length);
+    const chosen = allFilteredTasks[randomIndex];
+    setPickedRandomTask(chosen);
+    setRandomModalOpen(true);
+    confetti({
+      particleCount: 60,
+      spread: 60,
+      origin: { y: 0.6 },
+    });
+  };
+
+  const handleRerollTask = () => {
+    if (allFilteredTasks.length === 0) return;
+    let pool = allFilteredTasks;
+    if (pickedRandomTask && pool.length > 1) {
+      pool = pool.filter((t) => t._id !== pickedRandomTask._id);
+    }
+    const randomIndex = Math.floor(Math.random() * pool.length);
+    setPickedRandomTask(pool[randomIndex]);
+  };
 
   // Compute overall stats
   const stats = useMemo(() => {
@@ -382,53 +466,84 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Section Header, Global Category Filter & Search */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        {/* Section Header, Global Category Multi-Select Filter & Search */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold tracking-tight">
-                {categoryFilter === 'all' ? 'Your Task Lists' : `Category: [${categoryFilter}] Tasks`}
+                {selectedCategories.length === 0
+                  ? 'Your Task Lists'
+                  : `Filtered Tasks: ${selectedCategories.map((c) => `[${c}]`).join(' ')}`}
               </h2>
-              {categoryFilter === 'all' && filteredLists.length > 1 && !searchQuery && (
+              {selectedCategories.length === 0 && filteredLists.length > 1 && !searchQuery && (
                 <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 hidden sm:inline-block">
                   Drag or use ‹ › arrows to reorder
                 </span>
               )}
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              {categoryFilter === 'all'
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              {selectedCategories.length === 0
                 ? `${filteredLists.length} ${filteredLists.length === 1 ? 'list' : 'lists'} available`
-                : `Showing all [${categoryFilter}] tasks across all your lists`}
+                : `Showing tasks matching ${selectedCategories.map((c) => `[${c}]`).join(' or ')} from every task list`}
             </p>
           </div>
 
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full sm:w-auto">
-            {/* Global Category Filter Selector */}
-            <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 shadow-xs shrink-0">
-              <label htmlFor="dashboard-category-filter" className="text-xs font-bold text-zinc-600 dark:text-zinc-400">
-                Category:
-              </label>
-              <select
-                id="dashboard-category-filter"
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value as 'all' | 'S' | 'NS' | 'M')}
-                className="text-xs font-bold font-mono bg-transparent text-zinc-900 dark:text-zinc-100 focus:outline-none cursor-pointer"
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            {/* Multiple Choice Category Selection Filter Bar */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1.5 shadow-xs">
+              <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 px-2 flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5" />
+                <span>Categories:</span>
+              </span>
+
+              {/* All Option */}
+              <button
+                type="button"
+                onClick={clearCategoryFilter}
+                className={`px-2.5 py-1 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  selectedCategories.length === 0
+                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-2xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                }`}
               >
-                <option value="all">All ▼</option>
-                <option value="S">S</option>
-                <option value="NS">NS</option>
-                <option value="M">M</option>
-              </select>
+                All
+              </button>
+
+              {/* Multiple Choice Category Buttons */}
+              {ALL_CATEGORIES.map((cat) => {
+                const isSelected = selectedCategories.includes(cat);
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => toggleCategory(cat)}
+                    aria-pressed={isSelected}
+                    title={`Filter by Category ${cat} (${isSelected ? 'Active - click to remove' : 'Click to add to filter'})`}
+                    className={`px-2.5 py-1 text-xs font-bold font-mono rounded-xl border transition-all flex items-center gap-1 cursor-pointer select-none ${
+                      isSelected
+                        ? getCategoryActiveBadgeClass(cat)
+                        : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-400 dark:text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <span>[{cat}]</span>
+                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Search Input */}
-            <div className="relative flex-1 sm:w-64">
+            <div className="relative flex-1 sm:w-60">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={categoryFilter === 'all' ? 'Search task lists...' : `Search in category [${categoryFilter}]...`}
+                placeholder={
+                  selectedCategories.length === 0
+                    ? 'Search task lists...'
+                    : 'Search in filtered tasks...'
+                }
                 className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-xs"
               />
             </div>
@@ -436,43 +551,165 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Global Category View vs Normal Lists Grid */}
-        {categoryFilter !== 'all' ? (
-          /* Global Category View */
+        {selectedCategories.length > 0 ? (
+          /* Global Category View with Randomize One Task Across All Lists */
           <div className="space-y-6">
-            <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-                  Category:
+            {/* Filter Status Bar with Randomize Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  Filtered Categories:
                 </span>
-                <span
-                  className={`px-2.5 py-0.5 rounded-lg text-xs font-bold font-mono border ${
-                    categoryFilter === 'S'
-                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border-blue-300 dark:border-blue-800'
-                      : categoryFilter === 'NS'
-                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border-amber-300 dark:border-amber-800'
-                      : 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border-purple-300 dark:border-purple-800'
-                  }`}
-                >
-                  [{categoryFilter}]
-                </span>
-                <span className="text-xs text-zinc-400">
-                  ({categoryTasks.length} {categoryTasks.length === 1 ? 'task' : 'tasks'} found)
+                <div className="flex items-center gap-1.5">
+                  {selectedCategories.map((cat) => (
+                    <span
+                      key={cat}
+                      className={`px-2.5 py-0.5 rounded-lg text-xs font-bold font-mono border ${getCategoryActiveBadgeClass(cat)}`}
+                    >
+                      [{cat}]
+                    </span>
+                  ))}
+                </div>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+                  • {allFilteredTasks.length} {allFilteredTasks.length === 1 ? 'task' : 'tasks'} found across{' '}
+                  {filteredGroupedTasks.length} {filteredGroupedTasks.length === 1 ? 'list' : 'lists'}
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('all')}
-                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                ← Clear category filter
-              </button>
+              <div className="flex items-center gap-2.5 shrink-0">
+                {/* 🎲 Randomize One Task Across All Lists */}
+                <button
+                  type="button"
+                  onClick={handleRandomizeTaskAcrossLists}
+                  disabled={allFilteredTasks.length === 0}
+                  title="Randomly pick ONE task from all task lists matching the selected categories"
+                  className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-sm shadow-purple-500/20 transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Dices className="w-4 h-4 stroke-[2.5]" />
+                  <span>🎲 Randomize One Task</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={clearCategoryFilter}
+                  className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline px-2 py-1"
+                >
+                  ← Clear Filter
+                </button>
+              </div>
             </div>
+
+            {/* Showcase Card for the Selected Random Task Across All Lists */}
+            {pickedRandomTask && (
+              <div className="p-5 sm:p-6 rounded-3xl bg-purple-50/80 dark:bg-purple-950/40 border-2 border-purple-300 dark:border-purple-800 shadow-md">
+                <div className="flex items-start justify-between gap-4 mb-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-purple-600 text-white flex items-center gap-1.5 shadow-2xs">
+                      <Dices className="w-4 h-4" />
+                      <span>Randomized Task Result</span>
+                    </span>
+                    {pickedRandomTask.taskListTitle && (
+                      <Link
+                        to={`/list/${pickedRandomTask.taskListId}`}
+                        className="text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline flex items-center gap-1 bg-purple-100/60 dark:bg-purple-900/60 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-800"
+                      >
+                        <span>📁 List: {pickedRandomTask.taskListTitle}</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleRerollTask}
+                      disabled={allFilteredTasks.length <= 1}
+                      title="Pick another random task across all lists"
+                      className="px-3 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300 bg-white dark:bg-zinc-900 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reroll Another</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPickedRandomTask(null)}
+                      title="Dismiss random result"
+                      className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/60 transition"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-purple-200/70 dark:border-purple-800/60">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCategoryTask(pickedRandomTask)}
+                      aria-label={pickedRandomTask.completed ? 'Mark incomplete' : 'Mark complete'}
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition shrink-0 ${
+                        pickedRandomTask.completed
+                          ? 'bg-emerald-500 text-white shadow-xs'
+                          : 'border-2 border-zinc-400 dark:border-zinc-500 hover:border-purple-500 text-transparent hover:text-purple-500'
+                      }`}
+                    >
+                      <Check className={`w-4 h-4 stroke-[3] ${pickedRandomTask.completed ? 'opacity-100' : 'opacity-0 hover:opacity-100'}`} />
+                    </button>
+
+                    <div className="min-w-0">
+                      <p
+                        className={`text-lg sm:text-xl font-bold truncate ${
+                          pickedRandomTask.completed
+                            ? 'line-through text-zinc-400 dark:text-zinc-500'
+                            : 'text-zinc-900 dark:text-white'
+                        }`}
+                      >
+                        {pickedRandomTask.title}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="text-[11px] font-bold text-zinc-400 uppercase">Tags:</span>
+                        {(Array.isArray(pickedRandomTask.categories) && pickedRandomTask.categories.length > 0
+                          ? pickedRandomTask.categories
+                          : [pickedRandomTask.category || 'S']
+                        ).map((cat) => (
+                          <span
+                            key={cat}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono border ${getCategoryActiveBadgeClass(cat)}`}
+                          >
+                            [{cat}]
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setRandomModalOpen(true)}
+                      className="px-3.5 py-2 text-xs font-bold text-purple-700 dark:text-purple-300 bg-white dark:bg-zinc-900 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800 rounded-xl transition flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Full Focus View</span>
+                    </button>
+                    <Link
+                      to={`/list/${pickedRandomTask.taskListId}`}
+                      className="px-3.5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      <span>Go to List</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {isLoadingCategoryTasks ? (
               <div className="py-16 flex flex-col items-center justify-center gap-3">
                 <div className="w-8 h-8 border-3 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
-                <p className="text-xs text-zinc-400">Loading tasks with category [{categoryFilter}]...</p>
+                <p className="text-xs text-zinc-400">
+                  Loading tasks with categories {selectedCategories.map((c) => `[${c}]`).join(' ')}...
+                </p>
               </div>
             ) : filteredGroupedTasks.length > 0 ? (
               <div className="space-y-6">
@@ -513,7 +750,8 @@ export const Dashboard: React.FC = () => {
                           totalTasks={group.tasks.length}
                           onToggle={handleToggleCategoryTask}
                           onUpdateTitle={async (taskId, title) => handleUpdateCategoryTask(taskId, { title })}
-                          onUpdateCategory={async (taskId, cat) => handleUpdateCategoryTask(taskId, { category: cat })}
+                          onUpdateCategory={async (taskId, cat) => handleUpdateCategoryTask(taskId, { categories: [cat], category: cat })}
+                          onUpdateCategories={async (taskId, cats) => handleUpdateCategoryTask(taskId, { categories: cats, category: cats[0] })}
                           onUpdateTask={handleUpdateCategoryTask}
                           onDelete={handleDeleteCategoryTask}
                         />
@@ -523,22 +761,22 @@ export const Dashboard: React.FC = () => {
                 ))}
               </div>
             ) : (
-              /* Empty State for Category */
+              /* Empty State for Category Filter */
               <div className="text-center py-16 px-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-xs">
                 <div className="w-12 h-12 mx-auto rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 mb-3">
                   <ListTodo className="w-6 h-6" />
                 </div>
                 <h3 className="text-base font-bold text-zinc-900 dark:text-white">
-                  No tasks found with category [{categoryFilter}]
+                  No tasks found with categories {selectedCategories.map((c) => `[${c}]`).join(' ')}
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm mx-auto">
                   {searchQuery
-                    ? 'No tasks matched your search query in this category.'
-                    : `None of your tasks are currently categorized as "${categoryFilter}". You can assign categories to tasks inside your lists.`}
+                    ? 'No tasks matched your search query in this category filter.'
+                    : 'None of your tasks currently have these categories. You can enable them on tasks inside your task lists.'}
                 </p>
                 <button
                   type="button"
-                  onClick={() => setCategoryFilter('all')}
+                  onClick={clearCategoryFilter}
                   className="mt-4 px-4 py-2 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   ← Return to all task lists
@@ -634,6 +872,15 @@ export const Dashboard: React.FC = () => {
           </>
         )}
       </main>
+
+      {/* Random Task Focus Modal (for picked task across all lists) */}
+      <RandomTaskModal
+        isOpen={randomModalOpen}
+        onClose={() => setRandomModalOpen(false)}
+        tasks={allFilteredTasks}
+        listTitle={`All Lists (Categories: ${selectedCategories.map((c) => `[${c}]`).join(' ')})`}
+        onToggleTask={handleToggleCategoryTask}
+      />
 
       {/* Create List Modal */}
       <CreateListModal

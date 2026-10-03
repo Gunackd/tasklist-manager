@@ -133,9 +133,24 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
 
                 <div className="min-h-[64px] flex flex-col items-center justify-center gap-2">
                   {selectedTask && (
-                    <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold border bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border-purple-200 dark:border-purple-800">
-                      Category: [{selectedTask.category || 'S'}]
-                    </span>
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
+                      {selectedTask.taskListTitle && (
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                          📁 {selectedTask.taskListTitle}
+                        </span>
+                      )}
+                      {(Array.isArray(selectedTask.categories) && selectedTask.categories.length > 0
+                        ? selectedTask.categories
+                        : [selectedTask.category || 'S']
+                      ).map((cat) => (
+                        <span
+                          key={cat}
+                          className="px-2 py-0.5 rounded-md text-xs font-mono font-bold border bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border-purple-200 dark:border-purple-800"
+                        >
+                          [{cat}]
+                        </span>
+                      ))}
+                    </div>
                   )}
                   <h3 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
                     {selectedTask?.title || 'No task selected'}

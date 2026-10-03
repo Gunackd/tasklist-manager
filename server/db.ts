@@ -31,12 +31,23 @@ export interface TaskDoc {
   taskListId: string;
   userId: string;
   title: string;
-  category?: 'S' | 'NS' | 'M';
+  categories?: ('S' | 'NS' | 'M' | 'A')[];
+  category?: 'S' | 'NS' | 'M' | 'A';
   completed: boolean;
   order: number;
   completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export function normalizeTaskCategories(doc: any): ('S' | 'NS' | 'M' | 'A')[] {
+  if (Array.isArray(doc?.categories)) {
+    return doc.categories.filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c));
+  }
+  if (doc?.category && ['S', 'NS', 'M', 'A'].includes(doc.category)) {
+    return [doc.category];
+  }
+  return ['S'];
 }
 
 interface LocalDatabase {
@@ -118,12 +129,14 @@ const MTaskSchema = new mongoose.Schema({
   taskListId: { type: String, required: true, index: true },
   userId: { type: String, required: true, index: true },
   title: { type: String, required: true },
-  category: { type: String, enum: ['S', 'NS', 'M'], default: 'S', index: true },
+  categories: { type: [String], default: ['S'], index: true },
+  category: { type: String, default: 'S', index: true },
   completed: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
   completedAt: { type: String, default: null },
 }, { timestamps: true });
 
+MTaskSchema.index({ userId: 1, categories: 1 });
 MTaskSchema.index({ userId: 1, category: 1 });
 
 export let MUser: mongoose.Model<any>;
@@ -374,11 +387,17 @@ export const db = {
     async findByListId(taskListId: string): Promise<TaskDoc[]> {
       if (isMongoConnected) {
         const docs = await MTask.find({ taskListId }).sort({ order: 1, createdAt: 1 }).lean();
-        return docs.map(d => ({ ...d, _id: d._id.toString(), category: (d.category as any) || 'S' })) as unknown as TaskDoc[];
+        return docs.map(d => {
+          const cats = normalizeTaskCategories(d);
+          return { ...d, _id: d._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
+        });
       }
       return memoryDb.tasks
         .filter(t => t.taskListId === taskListId)
-        .map(t => ({ ...t, category: t.category || 'S' }))
+        .map(t => {
+          const cats = normalizeTaskCategories(t);
+          return { ...t, categories: cats, category: cats[0] || 'S' };
+        })
         .sort((a, b) => a.order - b.order || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     },
 
@@ -386,40 +405,75 @@ export const db = {
       if (isMongoConnected) {
         const doc = await MTask.findById(id).lean();
         if (!doc) return null;
-        return { ...doc, _id: doc._id.toString(), category: (doc.category as any) || 'S' } as unknown as TaskDoc;
+        const cats = normalizeTaskCategories(doc);
+        return { ...doc, _id: doc._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
       }
       const found = memoryDb.tasks.find(t => t._id === id);
-      return found ? { ...found, category: found.category || 'S' } : null;
+      if (!found) return null;
+      const cats = normalizeTaskCategories(found);
+      return { ...found, categories: cats, category: cats[0] || 'S' };
     },
 
-    async findByUserId(userId: string, category?: string): Promise<TaskDoc[]> {
-      const validCategory = category && ['S', 'NS', 'M'].includes(category) ? category : null;
+    async findByUserId(userId: string, categories?: string[] | string): Promise<TaskDoc[]> {
+      let validCategories: ('S' | 'NS' | 'M' | 'A')[] = [];
+      if (Array.isArray(categories)) {
+        validCategories = categories.filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c)) as any;
+      } else if (typeof categories === 'string' && categories.trim()) {
+        validCategories = categories
+          .split(',')
+          .map(c => c.trim())
+          .filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c)) as any;
+      }
+
       if (isMongoConnected) {
         const filter: any = { userId };
-        if (validCategory) {
-          if (validCategory === 'S') {
-            filter.$or = [{ category: 'S' }, { category: { $exists: false } }, { category: null }];
-          } else {
-            filter.category = validCategory;
+        if (validCategories.length > 0) {
+          const orConditions: any[] = [
+            { categories: { $in: validCategories } },
+            { category: { $in: validCategories } },
+          ];
+          if (validCategories.includes('S')) {
+            orConditions.push(
+              { categories: { $exists: false } },
+              { categories: { $size: 0 } },
+              { category: { $exists: false } },
+              { category: null }
+            );
           }
+          filter.$or = orConditions;
         }
         const docs = await MTask.find(filter).sort({ order: 1, createdAt: 1 }).lean();
-        return docs.map(d => ({ ...d, _id: d._id.toString(), category: (d.category as any) || 'S' })) as unknown as TaskDoc[];
+        return docs.map(d => {
+          const cats = normalizeTaskCategories(d);
+          return { ...d, _id: d._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
+        });
       }
 
       return memoryDb.tasks
         .filter(t => {
           if (t.userId !== userId) return false;
-          const taskCat = t.category || 'S';
-          return !validCategory || taskCat === validCategory;
+          if (validCategories.length === 0) return true;
+          const cats = normalizeTaskCategories(t);
+          return validCategories.some(c => cats.includes(c));
         })
-        .map(t => ({ ...t, category: t.category || 'S' }))
+        .map(t => {
+          const cats = normalizeTaskCategories(t);
+          return { ...t, categories: cats, category: cats[0] || 'S' };
+        })
         .sort((a, b) => a.order - b.order || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     },
 
-    async create(taskData: { taskListId: string; userId: string; title: string; category?: 'S' | 'NS' | 'M'; order?: number }): Promise<TaskDoc> {
+    async create(taskData: {
+      taskListId: string;
+      userId: string;
+      title: string;
+      categories?: ('S' | 'NS' | 'M' | 'A')[];
+      category?: 'S' | 'NS' | 'M' | 'A';
+      order?: number;
+    }): Promise<TaskDoc> {
       const now = new Date().toISOString();
-      const category = taskData.category && ['S', 'NS', 'M'].includes(taskData.category) ? taskData.category : 'S';
+      const categories = normalizeTaskCategories(taskData);
+      const category = categories[0] || 'S';
       let order = taskData.order;
       if (order === undefined) {
         const existing = await this.findByListId(taskData.taskListId);
@@ -427,9 +481,9 @@ export const db = {
       }
 
       if (isMongoConnected) {
-        const created = await MTask.create({ ...taskData, category, order, completed: false });
+        const created = await MTask.create({ ...taskData, categories, category, order, completed: false });
         const doc = created.toObject();
-        return { ...doc, _id: doc._id.toString(), category } as unknown as TaskDoc;
+        return { ...doc, _id: doc._id.toString(), categories, category } as unknown as TaskDoc;
       }
 
       const newTask: TaskDoc = {
@@ -437,6 +491,7 @@ export const db = {
         taskListId: taskData.taskListId,
         userId: taskData.userId,
         title: taskData.title,
+        categories,
         category,
         completed: false,
         order,
@@ -451,8 +506,8 @@ export const db = {
     async createMany(
       taskListId: string,
       userId: string,
-      items: ({ title: string; category?: 'S' | 'NS' | 'M' } | string)[],
-      defaultCategory: 'S' | 'NS' | 'M' = 'S'
+      items: ({ title: string; categories?: ('S' | 'NS' | 'M' | 'A')[]; category?: 'S' | 'NS' | 'M' | 'A' } | string)[],
+      defaultCategories: ('S' | 'NS' | 'M' | 'A')[] = ['S']
     ): Promise<TaskDoc[]> {
       const now = new Date().toISOString();
       const existing = await this.findByListId(taskListId);
@@ -460,14 +515,17 @@ export const db = {
 
       const newTasks: TaskDoc[] = items.map((item, idx) => {
         const title = typeof item === 'string' ? item : item.title;
-        const rawCat = typeof item === 'string' ? defaultCategory : (item.category || defaultCategory);
-        const category = ['S', 'NS', 'M'].includes(rawCat) ? rawCat : 'S';
+        let categories: ('S' | 'NS' | 'M' | 'A')[] = defaultCategories;
+        if (typeof item === 'object') {
+          categories = normalizeTaskCategories(item);
+        }
         return {
           _id: `task_${crypto.randomUUID()}`,
           taskListId,
           userId,
           title,
-          category,
+          categories,
+          category: categories[0] || 'S',
           completed: false,
           order: startOrder + idx,
           createdAt: now,
@@ -480,12 +538,16 @@ export const db = {
           taskListId: t.taskListId,
           userId: t.userId,
           title: t.title,
+          categories: t.categories,
           category: t.category,
           completed: false,
           order: t.order,
         }));
         const createdDocs = await MTask.insertMany(toInsert);
-        return createdDocs.map(d => ({ ...d.toObject(), _id: d._id.toString(), category: (d.category as any) || 'S' })) as unknown as TaskDoc[];
+        return createdDocs.map(d => {
+          const cats = normalizeTaskCategories(d);
+          return { ...d.toObject(), _id: d._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
+        });
       }
 
       memoryDb.tasks.push(...newTasks);
@@ -495,24 +557,38 @@ export const db = {
 
     async update(id: string, userId: string, updates: Partial<TaskDoc>): Promise<TaskDoc | null> {
       const now = new Date().toISOString();
+      const safeUpdates: any = { ...updates };
+      if (updates.categories !== undefined) {
+        const cats = normalizeTaskCategories({ categories: updates.categories });
+        safeUpdates.categories = cats;
+        safeUpdates.category = cats[0] || 'S';
+      } else if (updates.category !== undefined) {
+        const cats = normalizeTaskCategories({ category: updates.category });
+        safeUpdates.categories = cats;
+        safeUpdates.category = cats[0] || 'S';
+      }
+
       if (isMongoConnected) {
         const updated = await MTask.findOneAndUpdate(
           { _id: id, userId },
-          { ...updates, updatedAt: now },
+          { ...safeUpdates, updatedAt: now },
           { new: true }
         ).lean();
         if (!updated) return null;
-        return { ...updated, _id: updated._id.toString(), category: (updated.category as any) || 'S' } as unknown as TaskDoc;
+        const cats = normalizeTaskCategories(updated);
+        return { ...updated, _id: updated._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
       }
 
       const index = memoryDb.tasks.findIndex(t => t._id === id && t.userId === userId);
       if (index === -1) return null;
       memoryDb.tasks[index] = {
         ...memoryDb.tasks[index],
-        ...updates,
-        category: updates.category || memoryDb.tasks[index].category || 'S',
+        ...safeUpdates,
         updatedAt: now,
       };
+      const cats = normalizeTaskCategories(memoryDb.tasks[index]);
+      memoryDb.tasks[index].categories = cats;
+      memoryDb.tasks[index].category = cats[0] || 'S';
       saveLocalDb();
       return memoryDb.tasks[index];
     },

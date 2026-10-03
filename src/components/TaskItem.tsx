@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Task, TaskCategory } from '../types/index.js';
+import { Task, TaskCategory, ALL_CATEGORIES } from '../types/index.js';
 import {
   Check,
   Trash2,
@@ -16,7 +16,8 @@ interface TaskItemProps {
   onToggle: (task: Task) => void;
   onUpdateTitle?: (taskId: string, newTitle: string) => Promise<void>;
   onUpdateCategory?: (taskId: string, newCategory: TaskCategory) => Promise<void>;
-  onUpdateTask?: (taskId: string, updates: { title?: string; category?: TaskCategory }) => Promise<void>;
+  onUpdateCategories?: (taskId: string, newCategories: TaskCategory[]) => Promise<void>;
+  onUpdateTask?: (taskId: string, updates: { title?: string; categories?: TaskCategory[]; category?: TaskCategory }) => Promise<void>;
   onDelete: (taskId: string) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -29,6 +30,20 @@ interface TaskItemProps {
   showListBadge?: boolean;
 }
 
+export const getCategoryActiveBadgeClass = (category: TaskCategory) => {
+  switch (category) {
+    case 'NS':
+      return 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-700 shadow-2xs';
+    case 'M':
+      return 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/80 dark:text-purple-300 dark:border-purple-700 shadow-2xs';
+    case 'A':
+      return 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-700 shadow-2xs';
+    case 'S':
+    default:
+      return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/80 dark:text-blue-300 dark:border-blue-700 shadow-2xs';
+  }
+};
+
 export const TaskItem: React.FC<TaskItemProps> = ({
   task,
   index,
@@ -36,6 +51,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
   onToggle,
   onUpdateTitle,
   onUpdateCategory,
+  onUpdateCategories,
   onUpdateTask,
   onDelete,
   onMoveUp,
@@ -50,13 +66,21 @@ export const TaskItem: React.FC<TaskItemProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState(task.title);
-  const [editedCategory, setEditedCategory] = useState<TaskCategory>(task.category || 'S');
+
+  const taskCategories = (Array.isArray(task.categories) && task.categories.length > 0)
+    ? task.categories
+    : [task.category || 'S'];
+
+  const [editedCategories, setEditedCategories] = useState<TaskCategory[]>(taskCategories);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setEditedTitle(task.title);
-    setEditedCategory(task.category || 'S');
-  }, [task.title, task.category]);
+    const cats = (Array.isArray(task.categories) && task.categories.length > 0)
+      ? task.categories
+      : [task.category || 'S'];
+    setEditedCategories(cats);
+  }, [task.title, task.categories, task.category]);
 
   useEffect(() => {
     if (isEditing) {
@@ -69,23 +93,30 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     const trimmedTitle = editedTitle.trim();
     if (!trimmedTitle) {
       setEditedTitle(task.title);
-      setEditedCategory(task.category || 'S');
+      setEditedCategories(taskCategories);
       setIsEditing(false);
       return;
     }
 
     const titleChanged = trimmedTitle !== task.title;
-    const categoryChanged = editedCategory !== (task.category || 'S');
+    const categoriesChanged =
+      editedCategories.length !== taskCategories.length ||
+      editedCategories.some(c => !taskCategories.includes(c));
 
-    if (titleChanged || categoryChanged) {
+    if (titleChanged || categoriesChanged) {
+      const finalCats = editedCategories;
       if (onUpdateTask) {
-        await onUpdateTask(task._id, { title: trimmedTitle, category: editedCategory });
+        await onUpdateTask(task._id, {
+          title: trimmedTitle,
+          categories: finalCats,
+          category: finalCats[0],
+        });
       } else {
         if (titleChanged && onUpdateTitle) {
           await onUpdateTitle(task._id, trimmedTitle);
         }
-        if (categoryChanged && onUpdateCategory) {
-          await onUpdateCategory(task._id, editedCategory);
+        if (categoriesChanged && onUpdateCategories) {
+          await onUpdateCategories(task._id, finalCats);
         }
       }
     }
@@ -97,31 +128,24 @@ export const TaskItem: React.FC<TaskItemProps> = ({
       handleSave();
     } else if (e.key === 'Escape') {
       setEditedTitle(task.title);
-      setEditedCategory(task.category || 'S');
+      setEditedCategories(taskCategories);
       setIsEditing(false);
     }
   };
 
-  const cycleCategory = async (e: React.MouseEvent) => {
+  const handleToggleCategory = async (cat: TaskCategory, e: React.MouseEvent) => {
     e.stopPropagation();
-    const current = task.category || 'S';
-    const next: TaskCategory = current === 'S' ? 'NS' : current === 'NS' ? 'M' : 'S';
-    if (onUpdateCategory) {
-      await onUpdateCategory(task._id, next);
-    } else if (onUpdateTask) {
-      await onUpdateTask(task._id, { category: next });
+    let next: TaskCategory[];
+    if (taskCategories.includes(cat)) {
+      next = taskCategories.filter(c => c !== cat);
+    } else {
+      next = [...taskCategories, cat];
     }
-  };
 
-  const getCategoryBadgeClass = (category?: TaskCategory) => {
-    switch (category) {
-      case 'NS':
-        return 'bg-amber-50 text-amber-700 border-amber-200/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/80 hover:bg-amber-100 dark:hover:bg-amber-900/60';
-      case 'M':
-        return 'bg-purple-50 text-purple-700 border-purple-200/80 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60';
-      case 'S':
-      default:
-        return 'bg-blue-50 text-blue-700 border-blue-200/80 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/80 hover:bg-blue-100 dark:hover:bg-blue-900/60';
+    if (onUpdateCategories) {
+      await onUpdateCategories(task._id, next);
+    } else if (onUpdateTask) {
+      await onUpdateTask(task._id, { categories: next, category: next[0] });
     }
   };
 
@@ -132,7 +156,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      className={`group flex items-center gap-2.5 sm:gap-3 p-3 sm:p-3.5 rounded-xl border transition-all duration-200 ${
+      className={`group flex items-center gap-2 sm:gap-3 p-3 sm:p-3.5 rounded-xl border transition-all duration-200 ${
         isDragging
           ? 'opacity-40 border-dashed border-blue-500 scale-[0.99]'
           : task.completed
@@ -197,49 +221,77 @@ export const TaskItem: React.FC<TaskItemProps> = ({
         />
       </button>
 
-      {/* Visible Category Badge */}
+      {/* Visible Multi-Category Buttons (Enable / Disable per category) */}
       {!isEditing && (
-        <button
-          type="button"
-          onClick={cycleCategory}
-          title={`Category: ${task.category || 'S'} (Click to cycle S → NS → M)`}
-          className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-bold font-mono border transition-all shrink-0 cursor-pointer shadow-2xs ${getCategoryBadgeClass(
-            task.category || 'S'
-          )}`}
-        >
-          [{task.category || 'S'}]
-        </button>
+        <div className="flex items-center gap-1 shrink-0" role="group" aria-label="Task categories">
+          {ALL_CATEGORIES.map((cat) => {
+            const isEnabled = taskCategories.includes(cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                aria-pressed={isEnabled}
+                aria-label={`Category ${cat}: ${isEnabled ? 'Enabled (click to disable)' : 'Disabled (click to enable)'}`}
+                onClick={(e) => handleToggleCategory(cat, e)}
+                title={`Category ${cat}: ${isEnabled ? 'Enabled (Click to disable)' : 'Disabled (Click to enable)'}`}
+                className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[11px] font-bold font-mono border transition-all cursor-pointer select-none ${
+                  isEnabled
+                    ? getCategoryActiveBadgeClass(cat)
+                    : 'bg-zinc-100/50 dark:bg-zinc-800/30 text-zinc-400 dark:text-zinc-600 border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600 hover:text-zinc-600 dark:hover:text-zinc-300 opacity-60 hover:opacity-100'
+                }`}
+              >
+                {isEnabled ? `[${cat}]` : cat}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* Title & Editable input */}
       <div className="flex-1 min-w-0">
         {isEditing ? (
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-            {/* Category selector during edit */}
-            <select
-              value={editedCategory}
-              onChange={(e) => setEditedCategory(e.target.value as TaskCategory)}
-              className="px-2 py-1 text-xs font-bold font-mono rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 shrink-0"
-              title="Change category"
-            >
-              <option value="S">[S]</option>
-              <option value="NS">[NS]</option>
-              <option value="M">[M]</option>
-            </select>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+            {/* Category enable/disable toggles in edit mode */}
+            <div className="flex items-center gap-1 shrink-0 bg-zinc-100 dark:bg-zinc-800/70 p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <span className="text-[10px] uppercase font-bold text-zinc-400 px-1">Tags:</span>
+              {ALL_CATEGORIES.map((cat) => {
+                const isEnabled = editedCategories.includes(cat);
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => {
+                      if (isEnabled) {
+                        setEditedCategories(editedCategories.filter((c) => c !== cat));
+                      } else {
+                        setEditedCategories([...editedCategories, cat]);
+                      }
+                    }}
+                    className={`px-1.5 py-0.5 text-xs font-mono font-bold rounded border transition-all ${
+                      isEnabled
+                        ? getCategoryActiveBadgeClass(cat)
+                        : 'text-zinc-400 dark:text-zinc-500 border-transparent hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    {isEnabled ? `[${cat}]` : cat}
+                  </button>
+                );
+              })}
+            </div>
 
-            <input
-              ref={inputRef}
-              type="text"
-              value={editedTitle}
-              onChange={(e) => setEditedTitle(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="flex-1 min-w-[140px] px-2.5 py-1 text-sm bg-zinc-100 dark:bg-zinc-800 border border-blue-500 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
-            />
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 w-full flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                value={editedTitle}
+                onChange={(e) => setEditedTitle(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="flex-1 min-w-[140px] px-2.5 py-1 text-sm bg-zinc-100 dark:bg-zinc-800 border border-blue-500 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none"
+              />
               <button
                 type="button"
                 onClick={handleSave}
-                className="px-2.5 py-1 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition"
+                className="px-2.5 py-1 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition shrink-0"
               >
                 Save
               </button>
@@ -247,10 +299,10 @@ export const TaskItem: React.FC<TaskItemProps> = ({
                 type="button"
                 onClick={() => {
                   setEditedTitle(task.title);
-                  setEditedCategory(task.category || 'S');
+                  setEditedCategories(taskCategories);
                   setIsEditing(false);
                 }}
-                className="px-2 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition"
+                className="px-2 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition shrink-0"
               >
                 Cancel
               </button>
@@ -284,7 +336,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
         <button
           type="button"
           onClick={() => setIsEditing(!isEditing)}
-          title="Edit task name & category"
+          title="Edit task name & categories"
           className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
         >
           <Edit2 className="w-3.5 h-3.5" />

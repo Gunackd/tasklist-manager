@@ -2,10 +2,10 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
-import { TaskList, Task, FilterStatus, TaskCategory } from '../types/index.js';
+import { TaskList, Task, FilterStatus, TaskCategory, ALL_CATEGORIES } from '../types/index.js';
 import { Navbar } from '../components/Navbar.js';
 import { ProgressBar } from '../components/ProgressBar.js';
-import { TaskItem } from '../components/TaskItem.js';
+import { TaskItem, getCategoryActiveBadgeClass } from '../components/TaskItem.js';
 import { BulkInputModal } from '../components/BulkInputModal.js';
 import { EditListModal } from '../components/EditListModal.js';
 import { ConfirmModal } from '../components/ConfirmModal.js';
@@ -33,7 +33,7 @@ export const ListDetail: React.FC = () => {
   const [list, setList] = useState<TaskList | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskCategory, setNewTaskCategory] = useState<TaskCategory>('S');
+  const [newTaskCategories, setNewTaskCategories] = useState<TaskCategory[]>(['S']);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterStatus>('all');
 
@@ -42,6 +42,15 @@ export const ListDetail: React.FC = () => {
   const [isRandomizingOrder, setIsRandomizingOrder] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const toggleNewTaskCategory = (cat: TaskCategory) => {
+    if (newTaskCategories.includes(cat)) {
+      if (newTaskCategories.length === 1) return;
+      setNewTaskCategories(newTaskCategories.filter((c) => c !== cat));
+    } else {
+      setNewTaskCategories([...newTaskCategories, cat]);
+    }
+  };
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -88,14 +97,14 @@ export const ListDetail: React.FC = () => {
     return { total, completed, percentage };
   }, [tasks]);
 
-  // Add individual task with category
+  // Add individual task with multi-categories
   const handleCreateSingleTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !newTaskTitle.trim()) return;
 
     try {
       setIsAddingTask(true);
-      const created = await api.createTask(id, newTaskTitle.trim(), newTaskCategory);
+      const created = await api.createTask(id, newTaskTitle.trim(), newTaskCategories);
       setTasks((prev) => [...prev, created]);
       setNewTaskTitle('');
     } catch (err: any) {
@@ -105,13 +114,13 @@ export const ListDetail: React.FC = () => {
     }
   };
 
-  // Add bulk tasks with category
+  // Add bulk tasks with categories
   const handleBulkAdd = async (
-    detectedTasks: { title: string; category: TaskCategory }[],
-    defaultCategory: TaskCategory
+    detectedTasks: { title: string; categories: TaskCategory[]; category: TaskCategory }[],
+    defaultCategories: TaskCategory[]
   ) => {
     if (!id) return;
-    const res = await api.bulkAddTasks(id, detectedTasks, defaultCategory);
+    const res = await api.bulkAddTasks(id, detectedTasks, defaultCategories);
     setTasks((prev) => [...prev, ...res.tasks]);
   };
 
@@ -147,22 +156,22 @@ export const ListDetail: React.FC = () => {
     }
   };
 
-  // Inline update category
-  const handleUpdateCategory = async (taskId: string, newCategory: TaskCategory) => {
+  // Inline update categories
+  const handleUpdateCategories = async (taskId: string, newCategories: TaskCategory[]) => {
     setTasks((prev) =>
-      prev.map((t) => (t._id === taskId ? { ...t, category: newCategory } : t))
+      prev.map((t) => (t._id === taskId ? { ...t, categories: newCategories, category: newCategories[0] } : t))
     );
     try {
-      await api.updateTask(taskId, { category: newCategory });
+      await api.updateTask(taskId, { categories: newCategories, category: newCategories[0] });
     } catch (err: any) {
-      console.error('Failed to update category:', err);
+      console.error('Failed to update categories:', err);
     }
   };
 
-  // Inline update task (title and/or category)
+  // Inline update task (title and/or categories)
   const handleUpdateTask = async (
     taskId: string,
-    updates: { title?: string; category?: TaskCategory }
+    updates: { title?: string; categories?: TaskCategory[]; category?: TaskCategory }
   ) => {
     setTasks((prev) =>
       prev.map((t) => (t._id === taskId ? { ...t, ...updates } : t))
@@ -454,19 +463,29 @@ export const ListDetail: React.FC = () => {
           {/* Quick Single Task Input Form with Category Selection */}
           <form onSubmit={handleCreateSingleTask} className="flex flex-col sm:flex-row gap-2">
             <div className="flex items-center gap-2 flex-1">
-              {/* Category Selector */}
-              <div className="relative shrink-0">
-                <select
-                  value={newTaskCategory}
-                  onChange={(e) => setNewTaskCategory(e.target.value as TaskCategory)}
-                  aria-label="Task Category"
-                  title="Category: S, NS, or M"
-                  className="h-full py-3 pl-3 pr-7 text-xs font-bold font-mono rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-2xs"
-                >
-                  <option value="S">[S]</option>
-                  <option value="NS">[NS]</option>
-                  <option value="M">[M]</option>
-                </select>
+              {/* Category Multiple Choice Enable/Disable Buttons */}
+              <div className="flex items-center gap-1 shrink-0 bg-zinc-50 dark:bg-zinc-950 p-1.5 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 dark:text-zinc-500 px-1 hidden sm:inline">
+                  Tags:
+                </span>
+                {ALL_CATEGORIES.map((cat) => {
+                  const isEnabled = newTaskCategories.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleNewTaskCategory(cat)}
+                      title={`Category ${cat}: ${isEnabled ? 'Enabled (Click to disable)' : 'Disabled (Click to enable)'}`}
+                      className={`px-2 py-1 text-xs font-bold font-mono rounded-xl border transition-all ${
+                        isEnabled
+                          ? getCategoryActiveBadgeClass(cat)
+                          : 'bg-white dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 opacity-60'
+                      }`}
+                    >
+                      {isEnabled ? `[${cat}]` : cat}
+                    </button>
+                  );
+                })}
               </div>
 
               <input
@@ -613,7 +632,7 @@ export const ListDetail: React.FC = () => {
                 totalTasks={filteredTasks.length}
                 onToggle={handleToggleTask}
                 onUpdateTitle={handleUpdateTitle}
-                onUpdateCategory={handleUpdateCategory}
+                onUpdateCategories={handleUpdateCategories}
                 onUpdateTask={handleUpdateTask}
                 onDelete={(taskId) => setDeleteTaskTarget(taskId)}
                 onMoveUp={index > 0 ? () => handleMoveTask(index, 'up') : undefined}

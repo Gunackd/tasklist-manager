@@ -1,12 +1,7 @@
-import { TaskCategory } from '../types/index.js';
+import { TaskCategory, ALL_CATEGORIES } from '../types/index.js';
 
 /**
  * Parses raw multi-line text input into clean individual task titles.
- * Automatically removes:
- * - Numbering prefix: e.g. "1. ", "1) ", "(1) ", "1 - "
- * - Bullets: e.g. "- ", "* ", "• ", "+ ", "> "
- * - Checkbox markers: e.g. "[ ] ", "[x] ", "[X] ", "✓ ", "○ "
- * - Trims whitespace and ignores empty lines.
  */
 export function parseBulkTasks(text: string): string[] {
   if (!text) return [];
@@ -16,10 +11,9 @@ export function parseBulkTasks(text: string): string[] {
     .map((line) => {
       let cleaned = line.trim();
 
-      // Check for inline category prefix like [S], [NS], [M]
-      cleaned = cleaned.replace(/^\[(S|NS|M)\]\s*/i, '');
-      cleaned = cleaned.replace(/^\((S|NS|M)\)\s*/i, '');
-      cleaned = cleaned.replace(/^(S|NS|M):\s*/i, '');
+      // Check for inline bracketed categories
+      cleaned = cleaned.replace(/^\[[A-Za-z,\s]+\]\s*/, '');
+      cleaned = cleaned.replace(/^\([A-Za-z,\s]+\)\s*/, '');
 
       // Remove markdown checkboxes like [ ], [x], [X]
       cleaned = cleaned.replace(/^\[[ xX]\]\s*/, '');
@@ -38,25 +32,29 @@ export function parseBulkTasks(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-export function parseBulkTasksWithCategory(
+export function parseBulkTasksWithCategories(
   text: string,
-  defaultCategory: TaskCategory = 'S'
-): { title: string; category: TaskCategory }[] {
+  defaultCategories: TaskCategory[] = ['S']
+): { title: string; categories: TaskCategory[]; category: TaskCategory }[] {
   if (!text) return [];
 
   return text
     .split(/\r?\n/)
     .map((line) => {
       let cleaned = line.trim();
-      let category: TaskCategory = defaultCategory;
+      let categories: TaskCategory[] = [...defaultCategories];
 
-      // Extract inline category if present: [S], [NS], [M] or (S), (NS), (M) or S:, NS:, M:
-      const catMatch = cleaned.match(/^\[(S|NS|M)\]\s*/i) ||
-                        cleaned.match(/^\((S|NS|M)\)\s*/i) ||
-                        cleaned.match(/^(S|NS|M):\s*/i);
-      if (catMatch) {
-        category = catMatch[1].toUpperCase() as TaskCategory;
-        cleaned = cleaned.slice(catMatch[0].length).trim();
+      // Extract inline bracketed categories like [S, NS], [M, A], [S][M]
+      const bracketMatch = cleaned.match(/^\[([A-Za-z,\s]+)\]\s*/i);
+      if (bracketMatch) {
+        const found = bracketMatch[1]
+          .split(/[,\s]+/)
+          .map(s => s.trim().toUpperCase())
+          .filter((c: any) => ALL_CATEGORIES.includes(c as TaskCategory)) as TaskCategory[];
+        if (found.length > 0) {
+          categories = found;
+          cleaned = cleaned.slice(bracketMatch[0].length).trim();
+        }
       }
 
       // Remove markdown checkboxes like [ ], [x], [X]
@@ -71,19 +69,35 @@ export function parseBulkTasksWithCategory(
       // Secondary check if checkmarks or bullets were after numbering
       cleaned = cleaned.replace(/^[✓✔○●\-\*\+•›»\>]\s*/, '');
 
-      // Check again if category was after numbering e.g. "1. [M] Practice"
-      const secondCatMatch = cleaned.match(/^\[(S|NS|M)\]\s*/i) ||
-                             cleaned.match(/^\((S|NS|M)\)\s*/i) ||
-                             cleaned.match(/^(S|NS|M):\s*/i);
-      if (secondCatMatch) {
-        category = secondCatMatch[1].toUpperCase() as TaskCategory;
-        cleaned = cleaned.slice(secondCatMatch[0].length).trim();
+      // Check again if categories were after numbering e.g. "1. [S, A] Practice"
+      const secondBracket = cleaned.match(/^\[([A-Za-z,\s]+)\]\s*/i);
+      if (secondBracket) {
+        const found = secondBracket[1]
+          .split(/[,\s]+/)
+          .map(s => s.trim().toUpperCase())
+          .filter((c: any) => ALL_CATEGORIES.includes(c as TaskCategory)) as TaskCategory[];
+        if (found.length > 0) {
+          categories = found;
+          cleaned = cleaned.slice(secondBracket[0].length).trim();
+        }
       }
 
       return {
         title: cleaned.trim(),
-        category,
+        categories,
+        category: categories[0] || 'S',
       };
     })
     .filter((item) => item.title.length > 0);
+}
+
+// Backward compatibility alias
+export function parseBulkTasksWithCategory(
+  text: string,
+  defaultCategory: TaskCategory = 'S'
+): { title: string; category: TaskCategory }[] {
+  return parseBulkTasksWithCategories(text, [defaultCategory]).map(t => ({
+    title: t.title,
+    category: t.category,
+  }));
 }

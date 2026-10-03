@@ -144,8 +144,14 @@ export const api = {
   },
 
   // Tasks
-  async getAllTasks(category?: string) {
-    const query = category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : '';
+  async getAllTasks(categories?: string | string[]) {
+    let catParam = '';
+    if (Array.isArray(categories) && categories.length > 0) {
+      catParam = categories.join(',');
+    } else if (typeof categories === 'string' && categories && categories !== 'all') {
+      catParam = categories;
+    }
+    const query = catParam ? `?categories=${encodeURIComponent(catParam)}` : '';
     return request<Task[]>(`/api/tasks${query}`);
   },
 
@@ -153,25 +159,28 @@ export const api = {
     return request<Task[]>(`/api/lists/${listId}/tasks`);
   },
 
-  async createTask(listId: string, title: string, category: TaskCategory = 'S') {
+  async createTask(listId: string, title: string, categories: TaskCategory[] = ['S']) {
     return request<Task>(`/api/lists/${listId}/tasks`, {
       method: 'POST',
-      body: JSON.stringify({ title, category }),
+      body: JSON.stringify({ title, categories, category: categories[0] || 'S' }),
     });
   },
 
   async bulkAddTasks(
     listId: string,
-    tasks: (string | { title: string; category?: TaskCategory })[],
-    category: TaskCategory = 'S'
+    tasks: (string | { title: string; categories?: TaskCategory[]; category?: TaskCategory })[],
+    categories: TaskCategory[] = ['S']
   ) {
     return request<{ message: string; tasks: Task[] }>(`/api/lists/${listId}/tasks/bulk`, {
       method: 'POST',
-      body: JSON.stringify({ tasks, category }),
+      body: JSON.stringify({ tasks, categories, category: categories[0] || 'S' }),
     });
   },
 
-  async updateTask(id: string, updates: Partial<{ title: string; completed: boolean; order: number; category: TaskCategory }>) {
+  async updateTask(
+    id: string,
+    updates: Partial<{ title: string; completed: boolean; order: number; categories: TaskCategory[]; category: TaskCategory }>
+  ) {
     return request<Task>(`/api/tasks/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
