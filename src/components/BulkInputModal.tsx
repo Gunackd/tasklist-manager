@@ -8,7 +8,7 @@ interface BulkInputModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (
-    tasks: { title: string; categories: TaskCategory[]; category: TaskCategory }[],
+    tasks: { title: string; tags?: string[]; categories: TaskCategory[]; category: TaskCategory }[],
     categories: TaskCategory[]
   ) => Promise<void>;
   listTitle: string;
@@ -158,7 +158,7 @@ export const BulkInputModal: React.FC<BulkInputModalProps> = ({
                 Paste your tasks below:
               </label>
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                One task per line (numbers & bullets are auto-cleaned)
+                One task per line • Supports #labels (e.g. #Work, #Urgent) & [S, M]
               </span>
             </div>
 

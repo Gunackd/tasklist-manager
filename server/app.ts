@@ -86,6 +86,7 @@ router.put('/lists/:id', authMiddleware as any, listController.updateList as any
 router.delete('/lists/:id', authMiddleware as any, listController.deleteList as any);
 
 // Tasks routes (protected)
+router.get('/tags', authMiddleware as any, taskController.getAllUserTags as any);
 router.get('/tasks', authMiddleware as any, taskController.getAllTasks as any);
 router.get('/lists/:listId/tasks', authMiddleware as any, taskController.getTasksByList as any);
 router.post('/lists/:listId/tasks', authMiddleware as any, taskController.createTask as any);

@@ -19,8 +19,19 @@ export async function getAllTasks(req: AuthenticatedRequest, res: Response) {
 
     const includeCompleted = req.query.includeCompleted === 'true';
 
+    let tags: string[] | undefined = undefined;
+    if (req.query.tags) {
+      if (Array.isArray(req.query.tags)) {
+        tags = req.query.tags.map(c => String(c).trim()).filter(Boolean);
+      } else if (typeof req.query.tags === 'string') {
+        tags = req.query.tags.split(',').map(c => c.trim()).filter(Boolean);
+      }
+    } else if (typeof req.query.tag === 'string' && req.query.tag.trim()) {
+      tags = req.query.tag.split(',').map(c => c.trim()).filter(Boolean);
+    }
+
     const [tasks, lists] = await Promise.all([
-      db.tasks.findByUserId(userId, categories, includeCompleted),
+      db.tasks.findByUserId(userId, categories, includeCompleted, tags),
       db.taskLists.findByUserId(userId),
     ]);
 
@@ -71,7 +82,7 @@ export async function createTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { listId } = req.params;
-    const { title, categories, category } = req.body;
+    const { title, categories, category, tags } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ message: 'Task title is required.' });
@@ -96,10 +107,18 @@ export async function createTask(req: AuthenticatedRequest, res: Response) {
       parsedCategories = ['S'];
     }
 
+    let parsedTags: string[] = [];
+    if (Array.isArray(tags)) {
+      parsedTags = Array.from(new Set(tags.map((t: any) => String(t).trim()).filter(Boolean)));
+    } else if (typeof tags === 'string' && tags.trim()) {
+      parsedTags = [tags.trim()];
+    }
+
     const task = await db.tasks.create({
       taskListId: listId,
       userId,
       title: title.trim(),
+      tags: parsedTags,
       categories: parsedCategories,
       category: parsedCategories[0] || 'S',
     });
@@ -206,7 +225,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { id } = req.params;
-    const { title, completed, order, categories, category, inProgress } = req.body;
+    const { title, completed, order, categories, category, inProgress, tags } = req.body;
 
     const existing = await db.tasks.findById(id);
     if (!existing) {
@@ -219,6 +238,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
 
     const updates: Partial<{
       title: string;
+      tags: string[];
       completed: boolean;
       inProgress: boolean;
       order: number;
@@ -237,6 +257,16 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
       updates.category = category as 'S' | 'NS' | 'M' | 'A';
     }
 
+    if (tags !== undefined) {
+      if (Array.isArray(tags)) {
+        updates.tags = Array.from(new Set(tags.map((t: any) => String(t).trim()).filter(Boolean)));
+      } else if (typeof tags === 'string') {
+        updates.tags = tags.split(',').map(t => t.trim()).filter(Boolean);
+      } else {
+        updates.tags = [];
+      }
+    }
+
     if (inProgress !== undefined) {
       updates.inProgress = Boolean(inProgress);
     }
@@ -253,6 +283,37 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
   } catch (err: any) {
     console.error('updateTask error:', err);
     return res.status(500).json({ message: 'Failed to update task: ' + err.message });
+  }
+}
+
+export async function getAllUserTags(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+    const tasks = await db.tasks.findByUserId(userId, undefined, true);
+    const tagMap: Record<string, { name: string; total: number; active: number; completed: number }> = {};
+
+    tasks.forEach(t => {
+      const taskTags = Array.isArray(t.tags) ? t.tags : [];
+      taskTags.forEach(tag => {
+        const trimmed = tag.trim();
+        if (!trimmed) return;
+        if (!tagMap[trimmed]) {
+          tagMap[trimmed] = { name: trimmed, total: 0, active: 0, completed: 0 };
+        }
+        tagMap[trimmed].total += 1;
+        if (t.completed) {
+          tagMap[trimmed].completed += 1;
+        } else {
+          tagMap[trimmed].active += 1;
+        }
+      });
+    });
+
+    const tagsList = Object.values(tagMap).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    return res.json(tagsList);
+  } catch (err: any) {
+    console.error('getAllUserTags error:', err);
+    return res.status(500).json({ message: 'Failed to fetch tags: ' + err.message });
   }
 }
 

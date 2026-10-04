@@ -150,6 +150,18 @@ export const RandomTaskModal: React.FC<RandomTaskModalProps> = ({
                           [{cat}]
                         </span>
                       ))}
+                      {Array.isArray(selectedTask.tags) && selectedTask.tags.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {selectedTask.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   <h3 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">
