@@ -31,7 +31,6 @@ export interface TaskDoc {
   taskListId: string;
   userId: string;
   title: string;
-  tags?: string[];
   categories?: ('S' | 'NS' | 'M' | 'A')[];
   category?: 'S' | 'NS' | 'M' | 'A';
   completed: boolean;
@@ -40,13 +39,6 @@ export interface TaskDoc {
   completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export function normalizeTaskTags(doc: any): string[] {
-  if (Array.isArray(doc?.tags)) {
-    return Array.from(new Set(doc.tags.map((t: any) => String(t).trim()).filter(Boolean)));
-  }
-  return [];
 }
 
 export function normalizeTaskCategories(doc: any): ('S' | 'NS' | 'M' | 'A')[] {
@@ -138,7 +130,6 @@ const MTaskSchema = new mongoose.Schema({
   taskListId: { type: String, required: true, index: true },
   userId: { type: String, required: true, index: true },
   title: { type: String, required: true },
-  tags: { type: [String], default: [], index: true },
   categories: { type: [String], default: ['S'], index: true },
   category: { type: String, default: 'S', index: true },
   completed: { type: Boolean, default: false },
@@ -147,7 +138,6 @@ const MTaskSchema = new mongoose.Schema({
   completedAt: { type: String, default: null },
 }, { timestamps: true });
 
-MTaskSchema.index({ userId: 1, tags: 1 });
 MTaskSchema.index({ userId: 1, categories: 1 });
 MTaskSchema.index({ userId: 1, category: 1 });
 
@@ -401,16 +391,14 @@ export const db = {
         const docs = await MTask.find({ taskListId }).sort({ order: 1, createdAt: 1 }).lean();
         return docs.map(d => {
           const cats = normalizeTaskCategories(d);
-          const tags = normalizeTaskTags(d);
-          return { ...d, _id: d._id.toString(), categories: cats, category: cats[0] || 'S', tags } as unknown as TaskDoc;
+          return { ...d, _id: d._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
         });
       }
       return memoryDb.tasks
         .filter(t => t.taskListId === taskListId)
         .map(t => {
           const cats = normalizeTaskCategories(t);
-          const tags = normalizeTaskTags(t);
-          return { ...t, categories: cats, category: cats[0] || 'S', tags };
+          return { ...t, categories: cats, category: cats[0] || 'S' };
         })
         .sort((a, b) => a.order - b.order || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     },
@@ -420,21 +408,18 @@ export const db = {
         const doc = await MTask.findById(id).lean();
         if (!doc) return null;
         const cats = normalizeTaskCategories(doc);
-        const tags = normalizeTaskTags(doc);
-        return { ...doc, _id: doc._id.toString(), categories: cats, category: cats[0] || 'S', tags } as unknown as TaskDoc;
+        return { ...doc, _id: doc._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
       }
       const found = memoryDb.tasks.find(t => t._id === id);
       if (!found) return null;
       const cats = normalizeTaskCategories(found);
-      const tags = normalizeTaskTags(found);
-      return { ...found, categories: cats, category: cats[0] || 'S', tags };
+      return { ...found, categories: cats, category: cats[0] || 'S' };
     },
 
     async findByUserId(
       userId: string,
       categories?: string[] | string,
-      includeCompleted: boolean = false,
-      tagsFilter?: string[] | string
+      includeCompleted: boolean = false
     ): Promise<TaskDoc[]> {
       let validCategories: ('S' | 'NS' | 'M' | 'A')[] = [];
       if (Array.isArray(categories)) {
@@ -446,20 +431,10 @@ export const db = {
           .filter((c: any) => ['S', 'NS', 'M', 'A'].includes(c)) as any;
       }
 
-      let validTags: string[] = [];
-      if (Array.isArray(tagsFilter)) {
-        validTags = tagsFilter.map(t => String(t).trim()).filter(Boolean);
-      } else if (typeof tagsFilter === 'string' && tagsFilter.trim()) {
-        validTags = tagsFilter.split(',').map(t => t.trim()).filter(Boolean);
-      }
-
       if (isMongoConnected) {
         const filter: any = { userId };
         if (!includeCompleted) {
           filter.completed = false;
-        }
-        if (validTags.length > 0) {
-          filter.tags = { $in: validTags };
         }
         if (validCategories.length > 0) {
           const orConditions: any[] = [
@@ -479,8 +454,7 @@ export const db = {
         const docs = await MTask.find(filter).sort({ order: 1, createdAt: 1 }).lean();
         return docs.map(d => {
           const cats = normalizeTaskCategories(d);
-          const tags = normalizeTaskTags(d);
-          return { ...d, _id: d._id.toString(), categories: cats, category: cats[0] || 'S', tags } as unknown as TaskDoc;
+          return { ...d, _id: d._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
         });
       }
 
@@ -488,18 +462,13 @@ export const db = {
         .filter(t => {
           if (t.userId !== userId) return false;
           if (!includeCompleted && t.completed) return false;
-          if (validTags.length > 0) {
-            const taskTags = normalizeTaskTags(t);
-            if (!validTags.some(tag => taskTags.includes(tag))) return false;
-          }
           if (validCategories.length === 0) return true;
           const cats = normalizeTaskCategories(t);
           return validCategories.some(c => cats.includes(c));
         })
         .map(t => {
           const cats = normalizeTaskCategories(t);
-          const tags = normalizeTaskTags(t);
-          return { ...t, categories: cats, category: cats[0] || 'S', tags };
+          return { ...t, categories: cats, category: cats[0] || 'S' };
         })
         .sort((a, b) => a.order - b.order || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     },
@@ -508,7 +477,6 @@ export const db = {
       taskListId: string;
       userId: string;
       title: string;
-      tags?: string[];
       categories?: ('S' | 'NS' | 'M' | 'A')[];
       category?: 'S' | 'NS' | 'M' | 'A';
       order?: number;
@@ -516,7 +484,6 @@ export const db = {
       const now = new Date().toISOString();
       const categories = normalizeTaskCategories(taskData);
       const category = categories[0] || 'S';
-      const tags = normalizeTaskTags(taskData);
       let order = taskData.order;
       if (order === undefined) {
         const existing = await this.findByListId(taskData.taskListId);
@@ -524,9 +491,9 @@ export const db = {
       }
 
       if (isMongoConnected) {
-        const created = await MTask.create({ ...taskData, tags, categories, category, order, completed: false });
+        const created = await MTask.create({ ...taskData, categories, category, order, completed: false });
         const doc = created.toObject();
-        return { ...doc, _id: doc._id.toString(), categories, category, tags } as unknown as TaskDoc;
+        return { ...doc, _id: doc._id.toString(), categories, category } as unknown as TaskDoc;
       }
 
       const newTask: TaskDoc = {
@@ -534,7 +501,6 @@ export const db = {
         taskListId: taskData.taskListId,
         userId: taskData.userId,
         title: taskData.title,
-        tags,
         categories,
         category,
         completed: false,
@@ -550,7 +516,7 @@ export const db = {
     async createMany(
       taskListId: string,
       userId: string,
-      items: ({ title: string; tags?: string[]; categories?: ('S' | 'NS' | 'M' | 'A')[]; category?: 'S' | 'NS' | 'M' | 'A' } | string)[],
+      items: ({ title: string; categories?: ('S' | 'NS' | 'M' | 'A')[]; category?: 'S' | 'NS' | 'M' | 'A' } | string)[],
       defaultCategories: ('S' | 'NS' | 'M' | 'A')[] = ['S']
     ): Promise<TaskDoc[]> {
       const now = new Date().toISOString();
@@ -560,17 +526,14 @@ export const db = {
       const newTasks: TaskDoc[] = items.map((item, idx) => {
         const title = typeof item === 'string' ? item : item.title;
         let categories: ('S' | 'NS' | 'M' | 'A')[] = defaultCategories;
-        let tags: string[] = [];
         if (typeof item === 'object') {
           categories = normalizeTaskCategories(item);
-          tags = normalizeTaskTags(item);
         }
         return {
           _id: `task_${crypto.randomUUID()}`,
           taskListId,
           userId,
           title,
-          tags,
           categories,
           category: categories[0] || 'S',
           completed: false,
@@ -585,7 +548,6 @@ export const db = {
           taskListId: t.taskListId,
           userId: t.userId,
           title: t.title,
-          tags: t.tags,
           categories: t.categories,
           category: t.category,
           completed: false,
@@ -594,8 +556,7 @@ export const db = {
         const createdDocs = await MTask.insertMany(toInsert);
         return createdDocs.map(d => {
           const cats = normalizeTaskCategories(d);
-          const tags = normalizeTaskTags(d);
-          return { ...d.toObject(), _id: d._id.toString(), categories: cats, category: cats[0] || 'S', tags } as unknown as TaskDoc;
+          return { ...d.toObject(), _id: d._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
         });
       }
 
@@ -618,13 +579,9 @@ export const db = {
       if (updates.completed !== undefined) {
         const isDone = Boolean(updates.completed);
         safeUpdates.completed = isDone;
-        safeUpdates.completedAt = isDone ? (updates.completedAt || now) : null;
         if (isDone && updates.inProgress === undefined) {
           safeUpdates.inProgress = false;
         }
-      }
-      if (updates.tags !== undefined) {
-        safeUpdates.tags = normalizeTaskTags({ tags: updates.tags });
       }
       if (updates.categories !== undefined) {
         const cats = normalizeTaskCategories({ categories: updates.categories });
@@ -644,8 +601,7 @@ export const db = {
         ).lean();
         if (!updated) return null;
         const cats = normalizeTaskCategories(updated);
-        const tags = normalizeTaskTags(updated);
-        return { ...updated, _id: updated._id.toString(), categories: cats, category: cats[0] || 'S', tags } as unknown as TaskDoc;
+        return { ...updated, _id: updated._id.toString(), categories: cats, category: cats[0] || 'S' } as unknown as TaskDoc;
       }
 
       const index = memoryDb.tasks.findIndex(t => t._id === id && t.userId === userId);
@@ -656,10 +612,8 @@ export const db = {
         updatedAt: now,
       };
       const cats = normalizeTaskCategories(memoryDb.tasks[index]);
-      const tags = normalizeTaskTags(memoryDb.tasks[index]);
       memoryDb.tasks[index].categories = cats;
       memoryDb.tasks[index].category = cats[0] || 'S';
-      memoryDb.tasks[index].tags = tags;
       saveLocalDb();
       return memoryDb.tasks[index];
     },

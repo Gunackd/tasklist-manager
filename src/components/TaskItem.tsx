@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Task, TaskCategory, ALL_CATEGORIES, DEFAULT_SUGGESTED_TAGS } from '../types/index.js';
+import { Task, TaskCategory, ALL_CATEGORIES } from '../types/index.js';
 import {
   Check,
   Clock,
@@ -8,9 +8,6 @@ import {
   ChevronUp,
   ChevronDown,
   GripVertical,
-  Tag,
-  X,
-  Plus,
 } from 'lucide-react';
 
 interface TaskItemProps {
@@ -22,8 +19,7 @@ interface TaskItemProps {
   onUpdateTitle?: (taskId: string, newTitle: string) => Promise<void>;
   onUpdateCategory?: (taskId: string, newCategory: TaskCategory) => Promise<void>;
   onUpdateCategories?: (taskId: string, newCategories: TaskCategory[]) => Promise<void>;
-  onUpdateTask?: (taskId: string, updates: { title?: string; inProgress?: boolean; categories?: TaskCategory[]; category?: TaskCategory; tags?: string[] }) => Promise<void>;
-  onTagClick?: (tag: string) => void;
+  onUpdateTask?: (taskId: string, updates: { title?: string; inProgress?: boolean; categories?: TaskCategory[]; category?: TaskCategory }) => Promise<void>;
   onDelete: (taskId: string) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -60,7 +56,6 @@ export const TaskItem: React.FC<TaskItemProps> = ({
   onUpdateCategory,
   onUpdateCategories,
   onUpdateTask,
-  onTagClick,
   onDelete,
   onMoveUp,
   onMoveDown,
@@ -80,8 +75,6 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     : [task.category || 'S'];
 
   const [editedCategories, setEditedCategories] = useState<TaskCategory[]>(taskCategories);
-  const [editedTags, setEditedTags] = useState<string[]>(Array.isArray(task.tags) ? task.tags : []);
-  const [tagInput, setTagInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -90,8 +83,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
       ? task.categories
       : [task.category || 'S'];
     setEditedCategories(cats);
-    setEditedTags(Array.isArray(task.tags) ? task.tags : []);
-  }, [task.title, task.categories, task.category, task.tags]);
+  }, [task.title, task.categories, task.category]);
 
   useEffect(() => {
     if (isEditing) {
@@ -100,25 +92,11 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     }
   }, [isEditing]);
 
-  const handleAddTag = (tagToAdd?: string) => {
-    const raw = tagToAdd || tagInput;
-    const clean = raw.trim().replace(/^#+/, '');
-    if (clean && !editedTags.includes(clean)) {
-      setEditedTags([...editedTags, clean]);
-    }
-    if (!tagToAdd) setTagInput('');
-  };
-
-  const handleRemoveTag = (tagToRemove: string) => {
-    setEditedTags(editedTags.filter((t) => t !== tagToRemove));
-  };
-
   const handleSave = async () => {
     const trimmedTitle = editedTitle.trim();
     if (!trimmedTitle) {
       setEditedTitle(task.title);
       setEditedCategories(taskCategories);
-      setEditedTags(Array.isArray(task.tags) ? task.tags : []);
       setIsEditing(false);
       return;
     }
@@ -127,19 +105,14 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     const categoriesChanged =
       editedCategories.length !== taskCategories.length ||
       editedCategories.some(c => !taskCategories.includes(c));
-    const currentTags = Array.isArray(task.tags) ? task.tags : [];
-    const tagsChanged =
-      editedTags.length !== currentTags.length ||
-      editedTags.some(t => !currentTags.includes(t));
 
-    if (titleChanged || categoriesChanged || tagsChanged) {
+    if (titleChanged || categoriesChanged) {
       const finalCats = editedCategories;
       if (onUpdateTask) {
         await onUpdateTask(task._id, {
           title: trimmedTitle,
           categories: finalCats,
           category: finalCats[0],
-          tags: editedTags,
         });
       } else {
         if (titleChanged && onUpdateTitle) {
@@ -356,7 +329,6 @@ export const TaskItem: React.FC<TaskItemProps> = ({
                 onClick={() => {
                   setEditedTitle(task.title);
                   setEditedCategories(taskCategories);
-                  setEditedTags(Array.isArray(task.tags) ? task.tags : []);
                   setIsEditing(false);
                 }}
                 className="px-2 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition shrink-0"
@@ -364,70 +336,9 @@ export const TaskItem: React.FC<TaskItemProps> = ({
                 Cancel
               </button>
             </div>
-
-            {/* Tag Editor in edit mode */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1 w-full">
-              <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1">
-                <Tag className="w-3 h-3" />
-                <span>Tags:</span>
-              </span>
-              {editedTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
-                >
-                  <span>#{tag}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tag)}
-                    title={`Remove tag #${tag}`}
-                    className="text-blue-500 hover:text-blue-700 dark:hover:text-blue-200 cursor-pointer"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </span>
-              ))}
-              <div className="inline-flex items-center gap-1">
-                <input
-                  type="text"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddTag();
-                    }
-                  }}
-                  placeholder="New tag..."
-                  className="px-2 py-0.5 text-xs bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-md text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500 w-24 sm:w-28"
-                />
-                {tagInput.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => handleAddTag()}
-                    className="p-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              {/* Quick suggestions */}
-              <div className="flex items-center gap-1">
-                {DEFAULT_SUGGESTED_TAGS.filter((st) => !editedTags.includes(st)).slice(0, 3).map((st) => (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => handleAddTag(st)}
-                    className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-dashed border-zinc-300 dark:border-zinc-700 transition cursor-pointer"
-                  >
-                    +{st}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-2 truncate">
+          <div className="flex items-center gap-2 truncate">
             <span
               onDoubleClick={() => setIsEditing(true)}
               onClick={() => onToggle(task)}
@@ -445,27 +356,6 @@ export const TaskItem: React.FC<TaskItemProps> = ({
                 <Clock className="w-2.5 h-2.5 stroke-[2.5]" />
                 <span>In Progress</span>
               </span>
-            )}
-
-            {/* Tags display */}
-            {Array.isArray(task.tags) && task.tags.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1 shrink-0">
-                {task.tags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onTagClick) onTagClick(tag);
-                    }}
-                    title={`Filter by tag #${tag}`}
-                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300 bg-zinc-100/90 hover:bg-zinc-200/90 dark:bg-zinc-800/90 dark:hover:bg-zinc-700 px-1.5 py-0.5 rounded-md border border-zinc-200/80 dark:border-zinc-700/60 transition cursor-pointer"
-                  >
-                    <Tag className="w-2.5 h-2.5 opacity-60 text-blue-500 dark:text-blue-400" />
-                    <span>{tag}</span>
-                  </button>
-                ))}
-              </div>
             )}
 
             {showListBadge && task.taskListTitle && (

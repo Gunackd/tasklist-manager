@@ -35,7 +35,7 @@ export function parseBulkTasks(text: string): string[] {
 export function parseBulkTasksWithCategories(
   text: string,
   defaultCategories: TaskCategory[] = ['S']
-): { title: string; tags?: string[]; categories: TaskCategory[]; category: TaskCategory }[] {
+): { title: string; categories: TaskCategory[]; category: TaskCategory }[] {
   if (!text) return [];
 
   return text
@@ -82,17 +82,8 @@ export function parseBulkTasksWithCategories(
         }
       }
 
-      // Extract hashtags if present e.g. #Work, #Urgent
-      let tags: string[] = [];
-      const hashtagMatches = cleaned.match(/#([a-zA-Z0-9_\-]+)/g);
-      if (hashtagMatches) {
-        tags = Array.from(new Set(hashtagMatches.map(m => m.slice(1).trim()).filter(Boolean)));
-        cleaned = cleaned.replace(/#([a-zA-Z0-9_\-]+)/g, '').trim();
-      }
-
       return {
         title: cleaned.trim(),
-        tags: tags.length > 0 ? tags : undefined,
         categories,
         category: categories[0] || 'S',
       };

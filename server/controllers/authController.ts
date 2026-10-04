@@ -49,13 +49,13 @@ export async function register(req: Request, res: Response) {
     });
 
     await db.tasks.createMany(sampleList._id, newUser._id, [
-      { title: 'HTML & Modern Semantic Elements', tags: ['Work', 'Urgent'], categories: ['S'] },
-      { title: 'CSS Flexbox, Grid & Responsive Design', tags: ['Work'], categories: ['S'] },
-      { title: 'JavaScript ES6+, Promises & Async/Await', tags: ['Work', 'Personal'], categories: ['NS'] },
-      { title: 'React Components, Hooks & State Management', tags: ['Work', 'Urgent'], categories: ['S'] },
-      { title: 'Tailwind CSS Styling & Utility Classes', tags: ['Personal'], categories: ['S'] },
-      { title: 'Redux / Context API Architecture', tags: ['Work'], categories: ['M'] },
-      { title: 'Next.js Full-Stack App Routing', tags: ['Urgent', 'Personal'], categories: ['A'] },
+      'HTML & Modern Semantic Elements',
+      'CSS Flexbox, Grid & Responsive Design',
+      'JavaScript ES6+, Promises & Async/Await',
+      'React Components, Hooks & State Management',
+      'Tailwind CSS Styling & Utility Classes',
+      'Redux / Context API Architecture',
+      'Next.js Full-Stack App Routing',
     ]);
 
     // Mark the first three tasks completed so progress is visible right away!
@@ -203,16 +203,16 @@ export async function demoLogin(req: Request, res: Response) {
       });
 
       const frontendTasks = await db.tasks.createMany(frontendList._id, user._id, [
-        { title: 'HTML5 & Accessibility Standards', tags: ['Work', 'Urgent'], categories: ['S'] },
-        { title: 'CSS Flexbox & CSS Grid Masterclass', tags: ['Work'], categories: ['S'] },
-        { title: 'JavaScript ES2024 & Modern Patterns', tags: ['Work', 'Personal'], categories: ['NS'] },
-        { title: 'React Hooks & State Architecture', tags: ['Work', 'Urgent'], categories: ['S'] },
-        { title: 'Redux Toolkit & Global Store', tags: ['Work'], categories: ['M'] },
-        { title: 'Next.js 15 App Router & Server Actions', tags: ['Urgent'], categories: ['A'] },
-        { title: 'TypeScript Strict Mode & Generics', tags: ['Work'], categories: ['S'] },
-        { title: 'Testing with Jest & Playwright', tags: ['Work'], categories: ['M'] },
-        { title: 'Performance Auditing & Core Web Vitals', tags: ['Urgent'], categories: ['NS'] },
-        { title: 'Tailwind CSS & Component Systems', tags: ['Personal'], categories: ['S'] },
+        'HTML5 & Accessibility Standards',
+        'CSS Flexbox & CSS Grid Masterclass',
+        'JavaScript ES2024 & Modern Patterns',
+        'React Hooks & State Architecture',
+        'Redux Toolkit & Global Store',
+        'Next.js 15 App Router & Server Actions',
+        'TypeScript Strict Mode & Generics',
+        'Testing with Jest & Playwright',
+        'Performance Auditing & Core Web Vitals',
+        'Tailwind CSS & Component Systems',
       ]);
 
       // Complete 8 of 10 tasks to match user prompt: "8 / 10 completed, 80%"
@@ -229,14 +229,14 @@ export async function demoLogin(req: Request, res: Response) {
       });
 
       const backendTasks = await db.tasks.createMany(backendList._id, user._id, [
-        { title: 'Node.js & Asynchronous Event Loop', tags: ['Work'], categories: ['S'] },
-        { title: 'Express.js & Middleware Chains', tags: ['Work'], categories: ['S'] },
-        { title: 'MongoDB Atlas & Database Indexing', tags: ['Work', 'Urgent'], categories: ['M'] },
-        { title: 'RESTful API Endpoints & Versioning', tags: ['Work'], categories: ['S'] },
-        { title: 'JWT Token Authentication & RBAC', tags: ['Urgent', 'Work'], categories: ['NS'] },
-        { title: 'Redis Caching & Rate Limiting', tags: ['Work'], categories: ['M'] },
-        { title: 'Docker Containers & Cloud Deployment', tags: ['Personal'], categories: ['A'] },
-        { title: 'CI/CD Pipelines & Automated Testing', tags: ['Work'], categories: ['S'] },
+        'Node.js & Asynchronous Event Loop',
+        'Express.js & Middleware Chains',
+        'MongoDB Atlas & Database Indexing',
+        'RESTful API Endpoints & Versioning',
+        'JWT Token Authentication & RBAC',
+        'Redis Caching & Rate Limiting',
+        'Docker Containers & Cloud Deployment',
+        'CI/CD Pipelines & Automated Testing',
       ]);
 
       // Complete 3 of 8 tasks to match prompt: "3 / 8 completed, 38%"

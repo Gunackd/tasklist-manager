@@ -144,46 +144,31 @@ export const api = {
   },
 
   // Tasks
-  async getAllTasks(
-    categories?: string | string[],
-    includeCompleted: boolean = false,
-    tags?: string | string[]
-  ) {
-    const params = new URLSearchParams();
+  async getAllTasks(categories?: string | string[]) {
     let catParam = '';
     if (Array.isArray(categories) && categories.length > 0) {
       catParam = categories.join(',');
     } else if (typeof categories === 'string' && categories && categories !== 'all') {
       catParam = categories;
     }
-    if (catParam) params.set('categories', catParam);
-    if (includeCompleted) params.set('includeCompleted', 'true');
-    if (tags) {
-      const tagStr = Array.isArray(tags) ? tags.join(',') : tags;
-      if (tagStr) params.set('tags', tagStr);
-    }
-    const query = params.toString() ? `?${params.toString()}` : '';
+    const query = catParam ? `?categories=${encodeURIComponent(catParam)}` : '';
     return request<Task[]>(`/api/tasks${query}`);
-  },
-
-  async getTags() {
-    return request<{ name: string; total: number; active: number; completed: number }[]>('/api/tags');
   },
 
   async getTasks(listId: string) {
     return request<Task[]>(`/api/lists/${listId}/tasks`);
   },
 
-  async createTask(listId: string, title: string, categories: TaskCategory[] = ['S'], tags: string[] = []) {
+  async createTask(listId: string, title: string, categories: TaskCategory[] = ['S']) {
     return request<Task>(`/api/lists/${listId}/tasks`, {
       method: 'POST',
-      body: JSON.stringify({ title, categories, category: categories[0] || 'S', tags }),
+      body: JSON.stringify({ title, categories, category: categories[0] || 'S' }),
     });
   },
 
   async bulkAddTasks(
     listId: string,
-    tasks: (string | { title: string; tags?: string[]; categories?: TaskCategory[]; category?: TaskCategory })[],
+    tasks: (string | { title: string; categories?: TaskCategory[]; category?: TaskCategory })[],
     categories: TaskCategory[] = ['S']
   ) {
     return request<{ message: string; tasks: Task[] }>(`/api/lists/${listId}/tasks/bulk`, {
@@ -196,7 +181,6 @@ export const api = {
     id: string,
     updates: Partial<{
       title: string;
-      tags: string[];
       completed: boolean;
       inProgress: boolean;
       order: number;

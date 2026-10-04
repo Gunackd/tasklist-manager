@@ -34,7 +34,6 @@ export interface Task {
   taskListId: string;
   userId: string;
   title: string;
-  tags?: string[];
   categories: TaskCategory[];
   category?: TaskCategory;
   completed: boolean;
@@ -46,8 +45,6 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
 }
-
-export const DEFAULT_SUGGESTED_TAGS = ['Work', 'Personal', 'Urgent', 'Health', 'Finance', 'Study'];
 
 export type FilterStatus = 'all' | 'active' | 'completed';
 export type SortOption = 'order' | 'alphabetical' | 'newest' | 'oldest';
