@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { api } from '../services/api.js';
-import { TaskList, Task, FilterStatus, TaskCategory, ALL_CATEGORIES } from '../types/index.js';
+import { TaskList, Task, FilterStatus, TaskCategory, ALL_CATEGORIES, DEFAULT_SUGGESTED_TAGS } from '../types/index.js';
 import { Navbar } from '../components/Navbar.js';
 import { ProgressBar } from '../components/ProgressBar.js';
 import { TaskItem, getCategoryActiveBadgeClass } from '../components/TaskItem.js';
@@ -23,6 +23,8 @@ import {
   ListFilter,
   CheckSquare,
   Dices,
+  Tag,
+  Check,
 } from 'lucide-react';
 
 export const ListDetail: React.FC = () => {
@@ -34,6 +36,7 @@ export const ListDetail: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategories, setNewTaskCategories] = useState<TaskCategory[]>(['S']);
+  const [selectedNewTags, setSelectedNewTags] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterStatus>('all');
 
@@ -97,16 +100,29 @@ export const ListDetail: React.FC = () => {
     return { total, completed, percentage };
   }, [tasks]);
 
-  // Add individual task with multi-categories
+  // Add individual task with multi-categories & tags
   const handleCreateSingleTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !newTaskTitle.trim()) return;
 
     try {
       setIsAddingTask(true);
-      const created = await api.createTask(id, newTaskTitle.trim(), newTaskCategories);
+      // Auto-extract hashtags like #Work, #Urgent from title
+      const tagMatches = newTaskTitle.match(/#([a-zA-Z0-9_\-]+)/g);
+      const extractedTags = tagMatches ? tagMatches.map((m) => m.slice(1)) : [];
+      const allTags = Array.from(new Set([...selectedNewTags, ...extractedTags]));
+      const cleanTitle =
+        newTaskTitle.replace(/#([a-zA-Z0-9_\-]+)/g, '').trim() || newTaskTitle.trim();
+
+      const created = await api.createTask(
+        id,
+        cleanTitle,
+        newTaskCategories,
+        allTags
+      );
       setTasks((prev) => [...prev, created]);
       setNewTaskTitle('');
+      setSelectedNewTags([]);
     } catch (err: any) {
       alert(err.message || 'Failed to create task.');
     } finally {
@@ -116,7 +132,7 @@ export const ListDetail: React.FC = () => {
 
   // Add bulk tasks with categories
   const handleBulkAdd = async (
-    detectedTasks: { title: string; categories: TaskCategory[]; category: TaskCategory }[],
+    detectedTasks: { title: string; tags?: string[]; categories: TaskCategory[]; category: TaskCategory }[],
     defaultCategories: TaskCategory[]
   ) => {
     if (!id) return;
@@ -168,10 +184,10 @@ export const ListDetail: React.FC = () => {
     }
   };
 
-  // Inline update task (title and/or categories)
+  // Inline update task (title, inProgress, categories, tags)
   const handleUpdateTask = async (
     taskId: string,
-    updates: { title?: string; categories?: TaskCategory[]; category?: TaskCategory }
+    updates: { title?: string; inProgress?: boolean; categories?: TaskCategory[]; category?: TaskCategory; tags?: string[] }
   ) => {
     setTasks((prev) =>
       prev.map((t) => (t._id === taskId ? { ...t, ...updates } : t))
@@ -360,7 +376,10 @@ export const ListDetail: React.FC = () => {
       })
       .filter((t) => {
         if (!searchQuery.trim()) return true;
-        return t.title.toLowerCase().includes(searchQuery.toLowerCase());
+        const q = searchQuery.toLowerCase().trim().replace(/^#/, '');
+        const titleMatch = t.title.toLowerCase().includes(q);
+        const tagMatch = Array.isArray(t.tags) && t.tags.some((tag) => tag.toLowerCase().includes(q));
+        return titleMatch || tagMatch;
       });
   }, [tasks, filter, searchQuery]);
 
@@ -530,7 +549,7 @@ export const ListDetail: React.FC = () => {
                 type="text"
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
-                placeholder="What needs to be done? (e.g. Implement Redux store)"
+                placeholder="What needs to be done? (e.g. Implement Redux store #Work #Urgent)"
                 className="w-full px-4 py-3 text-sm bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               />
             </div>
@@ -561,6 +580,36 @@ export const ListDetail: React.FC = () => {
               </button>
             </div>
           </form>
+
+          {/* Quick Labels Selection */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 flex items-center gap-1">
+              <Tag className="w-3 h-3" />
+              <span>Labels:</span>
+            </span>
+            {DEFAULT_SUGGESTED_TAGS.map((st) => {
+              const isSelected = selectedNewTags.includes(st);
+              return (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => {
+                    setSelectedNewTags((prev) =>
+                      prev.includes(st) ? prev.filter((t) => t !== st) : [...prev, st]
+                    );
+                  }}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    isSelected
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  <span>#{st}</span>
+                  {isSelected && <Check className="w-2.5 h-2.5" />}
+                </button>
+              );
+            })}
+          </div>
 
           {/* Action Bar: Bulk Paste, Randomize & Clear completed */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
@@ -673,6 +722,7 @@ export const ListDetail: React.FC = () => {
                 onUpdateTitle={handleUpdateTitle}
                 onUpdateCategories={handleUpdateCategories}
                 onUpdateTask={handleUpdateTask}
+                onTagClick={(tag) => setSearchQuery(tag)}
                 onDelete={(taskId) => setDeleteTaskTarget(taskId)}
                 onMoveUp={index > 0 ? () => handleMoveTask(index, 'up') : undefined}
                 onMoveDown={

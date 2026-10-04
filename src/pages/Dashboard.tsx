@@ -14,10 +14,7 @@ import { RandomTaskModal } from '../components/RandomTaskModal.js';
 import {
   Plus,
   Search,
-  CheckCircle2,
   ListTodo,
-  TrendingUp,
-  FolderPlus,
   RefreshCw,
   Sparkles,
   ArrowRight,
@@ -382,28 +379,6 @@ export const Dashboard: React.FC = () => {
     setPickedRandomTask(pool[randomIndex]);
   };
 
-  // Compute overall stats
-  const stats = useMemo(() => {
-    const totalLists = lists.length;
-    let totalTasks = 0;
-    let totalCompleted = 0;
-
-    lists.forEach((list) => {
-      totalTasks += list.totalTasks || 0;
-      totalCompleted += list.completedTasks || 0;
-    });
-
-    const overallProgress =
-      totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0;
-
-    return {
-      totalLists,
-      totalTasks,
-      totalCompleted,
-      overallProgress,
-    };
-  }, [lists]);
-
   // Filtered lists for regular dashboard
   const filteredLists = useMemo(() => {
     if (!searchQuery.trim()) return lists;
@@ -454,57 +429,6 @@ export const Dashboard: React.FC = () => {
               <Plus className="w-4 h-4 stroke-[3]" />
               <span>New Task List</span>
             </button>
-          </div>
-        </div>
-
-        {/* Global Statistics Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                Total Lists
-              </span>
-              <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
-                <FolderPlus className="w-4 h-4" />
-              </div>
-            </div>
-            <p className="mt-2 text-2xl font-bold">{stats.totalLists}</p>
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                Total Tasks
-              </span>
-              <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
-                <ListTodo className="w-4 h-4" />
-              </div>
-            </div>
-            <p className="mt-2 text-2xl font-bold">{stats.totalTasks}</p>
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                Completed
-              </span>
-              <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-            </div>
-            <p className="mt-2 text-2xl font-bold">{stats.totalCompleted}</p>
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                Progress
-              </span>
-              <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
-                <TrendingUp className="w-4 h-4" />
-              </div>
-            </div>
-            <p className="mt-2 text-2xl font-bold">{stats.overallProgress}%</p>
           </div>
         </div>
 
