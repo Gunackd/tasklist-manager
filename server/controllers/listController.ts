@@ -196,3 +196,80 @@ export async function reorderLists(req: AuthenticatedRequest, res: Response) {
   }
 }
 
+export async function mergeLists(req: AuthenticatedRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+    const { id } = req.params; // targetListId
+    const { sourceListId } = req.body;
+
+    if (!sourceListId) {
+      return res.status(400).json({ message: 'Source list ID is required.' });
+    }
+
+    if (id === sourceListId) {
+      return res.status(400).json({ message: 'Cannot merge a list into itself.' });
+    }
+
+    const [targetList, sourceList] = await Promise.all([
+      db.taskLists.findById(id),
+      db.taskLists.findById(sourceListId),
+    ]);
+
+    if (!targetList) {
+      return res.status(404).json({ message: 'Target task list not found.' });
+    }
+    if (!sourceList) {
+      return res.status(404).json({ message: 'Source task list not found.' });
+    }
+
+    if (targetList.userId !== userId || sourceList.userId !== userId) {
+      return res.status(403).json({ message: 'Access denied: You must own both task lists to merge them.' });
+    }
+
+    const sourceTitle = sourceList.title;
+    const targetTitle = targetList.title;
+
+    const result = await db.taskLists.merge(id, sourceListId, userId);
+
+    // Compute updated stats for the merged target list
+    const tasks = await db.tasks.findByListId(result.targetList._id);
+    const total = tasks.length;
+    const completedTasksList = tasks.filter(t => t.completed);
+    const completed = completedTasksList.length;
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    let lastCompletedTask: { _id: string; title: string; completedAt?: string | null } | null = null;
+    if (completedTasksList.length > 0) {
+      const sorted = [...completedTasksList].sort((a, b) => {
+        const timeA = new Date(a.completedAt || a.updatedAt || a.createdAt).getTime();
+        const timeB = new Date(b.completedAt || b.updatedAt || b.createdAt).getTime();
+        return timeB - timeA;
+      });
+      lastCompletedTask = {
+        _id: sorted[0]._id,
+        title: sorted[0].title,
+        completedAt: sorted[0].completedAt || sorted[0].updatedAt || sorted[0].createdAt,
+      };
+    }
+
+    const targetListWithStats = {
+      ...result.targetList,
+      totalTasks: total,
+      completedTasks: completed,
+      progress,
+      lastCompletedTask,
+      tasks,
+    };
+
+    return res.json({
+      message: `Successfully merged "${sourceTitle}" into "${targetTitle}".`,
+      targetList: targetListWithStats,
+      tasksMovedCount: result.tasksMovedCount,
+    });
+  } catch (err: any) {
+    console.error('mergeLists error:', err);
+    return res.status(500).json({ message: 'Failed to merge task lists: ' + err.message });
+  }
+}
+
+

@@ -143,6 +143,13 @@ export const api = {
     });
   },
 
+  async mergeLists(targetListId: string, sourceListId: string) {
+    return request<{ message: string; targetList: TaskList; tasksMovedCount: number }>(`/api/lists/${targetListId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ sourceListId }),
+    });
+  },
+
   // Tasks
   async getAllTasks(
     categories?: string | string[],

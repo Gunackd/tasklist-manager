@@ -10,6 +10,7 @@ import { BulkInputModal } from '../components/BulkInputModal.js';
 import { EditListModal } from '../components/EditListModal.js';
 import { ConfirmModal } from '../components/ConfirmModal.js';
 import { RandomTaskModal } from '../components/RandomTaskModal.js';
+import { MergeListsModal } from '../components/MergeListsModal.js';
 import {
   ArrowLeft,
   Plus,
@@ -25,6 +26,7 @@ import {
   Dices,
   Tag,
   Check,
+  GitMerge,
 } from 'lucide-react';
 
 export const ListDetail: React.FC = () => {
@@ -69,6 +71,30 @@ export const ListDetail: React.FC = () => {
   const [deleteTaskTarget, setDeleteTaskTarget] = useState<string | null>(null);
   const [confirmDeleteList, setConfirmDeleteList] = useState(false);
   const [confirmClearCompleted, setConfirmClearCompleted] = useState(false);
+  const [mergeModalOpen, setMergeModalOpen] = useState(false);
+  const [allLists, setAllLists] = useState<TaskList[]>([]);
+
+  const handleOpenMergeModal = async () => {
+    try {
+      const fetchedLists = await api.getLists();
+      setAllLists(fetchedLists);
+      setMergeModalOpen(true);
+    } catch (err: any) {
+      showToast('Failed to load lists for merge: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  const handleMergeLists = async (targetId: string, sourceId: string) => {
+    const res = await api.mergeLists(targetId, sourceId);
+    if (sourceId === id) {
+      // Current list was merged into targetId and deleted -> redirect to target
+      navigate(`/list/${targetId}`);
+    } else {
+      // Target was current list -> reload tasks and show toast
+      showToast(res.message);
+      await fetchListDetails();
+    }
+  };
 
   const fetchListDetails = async () => {
     if (!id) return;
@@ -486,6 +512,16 @@ export const ListDetail: React.FC = () => {
 
               <button
                 type="button"
+                onClick={handleOpenMergeModal}
+                title="Merge with another task list"
+                className="px-3 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 rounded-xl transition flex items-center gap-1.5 shadow-xs"
+              >
+                <GitMerge className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span className="hidden sm:inline">Merge Lists</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setConfirmDeleteList(true)}
                 title="Delete this task list"
                 className="p-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition text-xs flex items-center gap-1"
@@ -808,6 +844,15 @@ export const ListDetail: React.FC = () => {
         message={`Are you sure you want to delete "${list.title}" and all ${tasks.length} tasks?`}
         onConfirm={handleDeleteList}
         onClose={() => setConfirmDeleteList(false)}
+      />
+
+      {/* Merge Task Lists Modal */}
+      <MergeListsModal
+        isOpen={mergeModalOpen}
+        onClose={() => setMergeModalOpen(false)}
+        lists={allLists.length > 0 ? allLists : (list ? [list] : [])}
+        initialTargetListId={list?._id}
+        onMerge={handleMergeLists}
       />
 
       {/* Non-intrusive Toast Notification */}

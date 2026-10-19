@@ -84,6 +84,7 @@ router.put('/lists/reorder', authMiddleware as any, listController.reorderLists 
 router.get('/lists/:id', authMiddleware as any, listController.getListById as any);
 router.put('/lists/:id', authMiddleware as any, listController.updateList as any);
 router.delete('/lists/:id', authMiddleware as any, listController.deleteList as any);
+router.post('/lists/:id/merge', authMiddleware as any, listController.mergeLists as any);
 
 // Tasks routes (protected)
 router.get('/tags', authMiddleware as any, taskController.getAllUserTags as any);

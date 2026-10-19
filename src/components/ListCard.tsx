@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  GitMerge,
 } from 'lucide-react';
 
 interface ListCardProps {
@@ -22,6 +23,7 @@ interface ListCardProps {
   totalLists?: number;
   onEdit: (list: TaskList) => void;
   onDelete: (list: TaskList) => void;
+  onMerge?: (list: TaskList) => void;
   onMoveLeft?: () => void;
   onMoveRight?: () => void;
   draggable?: boolean;
@@ -38,6 +40,7 @@ export const ListCard: React.FC<ListCardProps> = ({
   totalLists = 1,
   onEdit,
   onDelete,
+  onMerge,
   onMoveLeft,
   onMoveRight,
   draggable = false,
@@ -172,6 +175,19 @@ export const ListCard: React.FC<ListCardProps> = ({
                     <Edit2 className="w-3.5 h-3.5" />
                     Rename / Edit
                   </button>
+                  {onMerge && totalLists > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onMerge(list);
+                      }}
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition"
+                    >
+                      <GitMerge className="w-3.5 h-3.5" />
+                      Merge With Another List
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

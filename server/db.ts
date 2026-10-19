@@ -392,6 +392,83 @@ export const db = {
         return true;
       }
       return false;
+    },
+
+    async merge(
+      targetListId: string,
+      sourceListId: string,
+      userId: string
+    ): Promise<{ targetList: TaskListDoc; tasksMovedCount: number }> {
+      const now = new Date().toISOString();
+
+      if (isMongoConnected) {
+        // 1. Get highest order in target list
+        const targetTasks = await MTask.find({ taskListId: targetListId }).sort({ order: 1 }).lean();
+        const startOrder = targetTasks.length > 0 ? Math.max(...targetTasks.map((t: any) => t.order ?? 0)) + 1 : 0;
+
+        // 2. Find tasks in source list
+        const sourceTasks = await MTask.find({ taskListId: sourceListId, userId }).sort({ order: 1 }).lean();
+
+        // 3. Move source tasks to target list
+        if (sourceTasks.length > 0) {
+          const bulkOps = sourceTasks.map((task: any, index: number) => ({
+            updateOne: {
+              filter: { _id: task._id },
+              update: {
+                $set: {
+                  taskListId: targetListId,
+                  order: startOrder + index,
+                  updatedAt: now,
+                },
+              },
+            },
+          }));
+          await MTask.bulkWrite(bulkOps);
+        }
+
+        // 4. Delete the source list
+        await MTaskList.deleteOne({ _id: sourceListId, userId });
+
+        // 5. Fetch updated target list
+        const targetDoc = await MTaskList.findById(targetListId).lean();
+        if (!targetDoc) {
+          throw new Error('Target task list not found after merge.');
+        }
+
+        return {
+          targetList: { ...targetDoc, _id: targetDoc._id.toString() } as unknown as TaskListDoc,
+          tasksMovedCount: sourceTasks.length,
+        };
+      }
+
+      // Memory / local JSON DB
+      const targetList = memoryDb.taskLists.find(l => l._id === targetListId && l.userId === userId);
+      if (!targetList) {
+        throw new Error('Target task list not found.');
+      }
+      const sourceList = memoryDb.taskLists.find(l => l._id === sourceListId && l.userId === userId);
+      if (!sourceList) {
+        throw new Error('Source task list not found.');
+      }
+
+      const targetTasks = memoryDb.tasks.filter(t => t.taskListId === targetListId);
+      const startOrder = targetTasks.length > 0 ? Math.max(...targetTasks.map(t => t.order ?? 0)) + 1 : 0;
+
+      const sourceTasks = memoryDb.tasks.filter(t => t.taskListId === sourceListId && t.userId === userId);
+      sourceTasks.forEach((task, idx) => {
+        task.taskListId = targetListId;
+        task.order = startOrder + idx;
+        task.updatedAt = now;
+      });
+
+      // Remove source list from taskLists
+      memoryDb.taskLists = memoryDb.taskLists.filter(l => !(l._id === sourceListId && l.userId === userId));
+      saveLocalDb();
+
+      return {
+        targetList,
+        tasksMovedCount: sourceTasks.length,
+      };
     }
   },
 

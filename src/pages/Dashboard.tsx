@@ -11,6 +11,7 @@ import { CreateListModal } from '../components/CreateListModal.js';
 import { EditListModal } from '../components/EditListModal.js';
 import { ConfirmModal } from '../components/ConfirmModal.js';
 import { RandomTaskModal } from '../components/RandomTaskModal.js';
+import { MergeListsModal } from '../components/MergeListsModal.js';
 import {
   Plus,
   Search,
@@ -24,6 +25,7 @@ import {
   Check,
   Clock,
   X,
+  GitMerge,
 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
@@ -47,6 +49,17 @@ export const Dashboard: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingList, setEditingList] = useState<TaskList | null>(null);
   const [deletingList, setDeletingList] = useState<TaskList | null>(null);
+  const [mergeModalOpen, setMergeModalOpen] = useState(false);
+  const [mergeTargetListId, setMergeTargetListId] = useState<string | undefined>(undefined);
+  const [mergeSourceListId, setMergeSourceListId] = useState<string | undefined>(undefined);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => {
+      setToastMessage((cur) => (cur === message ? null : cur));
+    }, 4000);
+  };
 
   const fetchLists = async (showRefreshing = false) => {
     try {
@@ -136,6 +149,35 @@ export const Dashboard: React.FC = () => {
     if (selectedCategories.length > 0) {
       fetchCategoryTasks(selectedCategories, true);
     }
+  };
+
+  const handleOpenMergeModal = (initialTarget?: TaskList) => {
+    if (initialTarget) {
+      setMergeTargetListId(initialTarget._id);
+      const other = lists.find((l) => l._id !== initialTarget._id);
+      setMergeSourceListId(other ? other._id : undefined);
+    } else {
+      setMergeTargetListId(lists[0]?._id);
+      const other = lists.find((l) => l._id !== lists[0]?._id);
+      setMergeSourceListId(other ? other._id : undefined);
+    }
+    setMergeModalOpen(true);
+  };
+
+  const handleMergeLists = async (targetId: string, sourceId: string) => {
+    const res = await api.mergeLists(targetId, sourceId);
+    // Update lists in state
+    setLists((prev) =>
+      prev
+        .filter((l) => l._id !== sourceId)
+        .map((l) => (l._id === targetId ? res.targetList : l))
+    );
+    // Invalidate category cache if needed
+    categoryCacheRef.current = {};
+    if (selectedCategories.length > 0) {
+      fetchCategoryTasks(selectedCategories, true);
+    }
+    showToast(res.message);
   };
 
   // Reorder task lists
@@ -421,6 +463,18 @@ export const Dashboard: React.FC = () => {
               />
             </button>
 
+            {lists.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => handleOpenMergeModal()}
+                title="Merge two task lists together"
+                className="px-3.5 py-2.5 rounded-xl font-semibold text-sm text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/80 shadow-xs flex items-center gap-2 transition"
+              >
+                <GitMerge className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Merge Lists</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setCreateModalOpen(true)}
@@ -431,6 +485,23 @@ export const Dashboard: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Feedback Toast */}
+        {toastMessage && (
+          <div className="mb-6 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-900/60 text-indigo-800 dark:text-indigo-200 text-sm flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+            <div className="flex items-center gap-2.5">
+              <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+              <span className="font-medium">{toastMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastMessage(null)}
+              className="text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Section Header, Global Category Multi-Select Filter & Search */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
@@ -790,6 +861,7 @@ export const Dashboard: React.FC = () => {
                     totalLists={filteredLists.length}
                     onEdit={(l) => setEditingList(l)}
                     onDelete={(l) => setDeletingList(l)}
+                    onMerge={(l) => handleOpenMergeModal(l)}
                     onMoveLeft={!searchQuery && index > 0 ? () => handleMoveList(index, index - 1) : undefined}
                     onMoveRight={!searchQuery && index < filteredLists.length - 1 ? () => handleMoveList(index, index + 1) : undefined}
                     draggable={!searchQuery && filteredLists.length > 1}
@@ -888,6 +960,16 @@ export const Dashboard: React.FC = () => {
         message={`Are you sure you want to permanently delete "${deletingList?.title}" and all of its tasks? This action cannot be undone.`}
         onConfirm={handleDeleteList}
         onClose={() => setDeletingList(null)}
+      />
+
+      {/* Merge Task Lists Modal */}
+      <MergeListsModal
+        isOpen={mergeModalOpen}
+        onClose={() => setMergeModalOpen(false)}
+        lists={lists}
+        initialTargetListId={mergeTargetListId}
+        initialSourceListId={mergeSourceListId}
+        onMerge={handleMergeLists}
       />
     </div>
   );
