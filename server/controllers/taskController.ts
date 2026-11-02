@@ -225,7 +225,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
   try {
     const userId = req.user!.id;
     const { id } = req.params;
-    const { title, completed, order, categories, category, inProgress, tags } = req.body;
+    const { title, completed, order, categories, category, inProgress, tags, taskListId } = req.body;
 
     const existing = await db.tasks.findById(id);
     if (!existing) {
@@ -237,6 +237,7 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
     }
 
     const updates: Partial<{
+      taskListId: string;
       title: string;
       tags: string[];
       completed: boolean;
@@ -246,6 +247,22 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
       categories: ('S' | 'NS' | 'M' | 'A')[];
       category: 'S' | 'NS' | 'M' | 'A';
     }> = {};
+
+    if (taskListId !== undefined && taskListId !== existing.taskListId) {
+      const targetList = await db.taskLists.findById(taskListId);
+      if (!targetList) {
+        return res.status(404).json({ message: 'Target task list not found.' });
+      }
+      if (targetList.userId !== userId) {
+        return res.status(403).json({ message: 'Access denied: Target task list belongs to another user.' });
+      }
+      updates.taskListId = taskListId;
+      if (order === undefined) {
+        const targetTasks = await db.tasks.findByListId(taskListId);
+        const maxOrder = targetTasks.length > 0 ? Math.max(...targetTasks.map(t => t.order ?? 0)) : -1;
+        updates.order = maxOrder + 1;
+      }
+    }
 
     if (title !== undefined && title.trim()) updates.title = title.trim();
     if (categories !== undefined && Array.isArray(categories)) {
@@ -278,8 +295,16 @@ export async function updateTask(req: AuthenticatedRequest, res: Response) {
     if (order !== undefined) updates.order = Number(order);
 
     const updated = await db.tasks.update(id, userId, updates);
+    if (!updated) {
+      return res.status(404).json({ message: 'Task not found or update failed.' });
+    }
 
-    return res.json(updated);
+    const listInfo = await db.taskLists.findById(updated.taskListId);
+    return res.json({
+      ...updated,
+      taskListTitle: listInfo?.title || 'Unknown List',
+      taskListColor: listInfo?.color || 'blue',
+    });
   } catch (err: any) {
     console.error('updateTask error:', err);
     return res.status(500).json({ message: 'Failed to update task: ' + err.message });

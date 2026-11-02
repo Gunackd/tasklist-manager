@@ -11,18 +11,30 @@ import {
   Tag,
   X,
   Plus,
+  FolderInput,
 } from 'lucide-react';
 
 interface TaskItemProps {
   task: Task;
   index: number;
   totalTasks?: number;
+  availableLists?: { _id: string; title: string; color?: string }[];
   onToggle: (task: Task) => void;
   onToggleProgress?: (task: Task) => void;
   onUpdateTitle?: (taskId: string, newTitle: string) => Promise<void>;
   onUpdateCategory?: (taskId: string, newCategory: TaskCategory) => Promise<void>;
   onUpdateCategories?: (taskId: string, newCategories: TaskCategory[]) => Promise<void>;
-  onUpdateTask?: (taskId: string, updates: { title?: string; inProgress?: boolean; categories?: TaskCategory[]; category?: TaskCategory; tags?: string[] }) => Promise<void>;
+  onUpdateTask?: (
+    taskId: string,
+    updates: {
+      title?: string;
+      inProgress?: boolean;
+      categories?: TaskCategory[];
+      category?: TaskCategory;
+      tags?: string[];
+      taskListId?: string;
+    }
+  ) => Promise<void>;
   onTagClick?: (tag: string) => void;
   onDelete: (taskId: string) => void;
   onMoveUp?: () => void;
@@ -54,6 +66,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
   task,
   index,
   totalTasks = 1,
+  availableLists,
   onToggle,
   onToggleProgress,
   onUpdateTitle,
@@ -81,6 +94,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
 
   const [editedCategories, setEditedCategories] = useState<TaskCategory[]>(taskCategories);
   const [editedTags, setEditedTags] = useState<string[]>(Array.isArray(task.tags) ? task.tags : []);
+  const [editedTaskListId, setEditedTaskListId] = useState<string>(task.taskListId || '');
   const [tagInput, setTagInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -91,7 +105,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({
       : [task.category || 'S'];
     setEditedCategories(cats);
     setEditedTags(Array.isArray(task.tags) ? task.tags : []);
-  }, [task.title, task.categories, task.category, task.tags]);
+    setEditedTaskListId(task.taskListId || '');
+  }, [task.title, task.categories, task.category, task.tags, task.taskListId]);
 
   useEffect(() => {
     if (isEditing) {
@@ -119,6 +134,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
       setEditedTitle(task.title);
       setEditedCategories(taskCategories);
       setEditedTags(Array.isArray(task.tags) ? task.tags : []);
+      setEditedTaskListId(task.taskListId || '');
       setIsEditing(false);
       return;
     }
@@ -131,8 +147,9 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     const tagsChanged =
       editedTags.length !== currentTags.length ||
       editedTags.some(t => !currentTags.includes(t));
+    const listChanged = Boolean(editedTaskListId && editedTaskListId !== task.taskListId);
 
-    if (titleChanged || categoriesChanged || tagsChanged) {
+    if (titleChanged || categoriesChanged || tagsChanged || listChanged) {
       const finalCats = editedCategories;
       if (onUpdateTask) {
         await onUpdateTask(task._id, {
@@ -140,6 +157,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
           categories: finalCats,
           category: finalCats[0],
           tags: editedTags,
+          ...(listChanged ? { taskListId: editedTaskListId } : {}),
         });
       } else {
         if (titleChanged && onUpdateTitle) {
@@ -159,6 +177,8 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     } else if (e.key === 'Escape') {
       setEditedTitle(task.title);
       setEditedCategories(taskCategories);
+      setEditedTags(Array.isArray(task.tags) ? task.tags : []);
+      setEditedTaskListId(task.taskListId || '');
       setIsEditing(false);
     }
   };
@@ -306,36 +326,9 @@ export const TaskItem: React.FC<TaskItemProps> = ({
       {/* Title & Editable input */}
       <div className="flex-1 min-w-0">
         {isEditing ? (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-            {/* Category enable/disable toggles in edit mode */}
-            <div className="flex items-center gap-1 shrink-0 bg-zinc-100 dark:bg-zinc-800/70 p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
-              <span className="text-[10px] uppercase font-bold text-zinc-400 px-1">Tags:</span>
-              {ALL_CATEGORIES.map((cat) => {
-                const isEnabled = editedCategories.includes(cat);
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => {
-                      if (isEnabled) {
-                        setEditedCategories(editedCategories.filter((c) => c !== cat));
-                      } else {
-                        setEditedCategories([...editedCategories, cat]);
-                      }
-                    }}
-                    className={`px-1.5 py-0.5 text-xs font-mono font-bold rounded border transition-all ${
-                      isEnabled
-                        ? getCategoryActiveBadgeClass(cat)
-                        : 'text-zinc-400 dark:text-zinc-500 border-transparent hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    {isEnabled ? `[${cat}]` : cat}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex items-center gap-1.5 w-full flex-1">
+          <div className="flex flex-col gap-2 w-full py-0.5">
+            {/* Title input and Save / Cancel buttons */}
+            <div className="flex items-center gap-1.5 w-full">
               <input
                 ref={inputRef}
                 type="text"
@@ -347,7 +340,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
               <button
                 type="button"
                 onClick={handleSave}
-                className="px-2.5 py-1 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition shrink-0"
+                className="px-2.5 py-1 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition shrink-0 cursor-pointer"
               >
                 Save
               </button>
@@ -357,12 +350,75 @@ export const TaskItem: React.FC<TaskItemProps> = ({
                   setEditedTitle(task.title);
                   setEditedCategories(taskCategories);
                   setEditedTags(Array.isArray(task.tags) ? task.tags : []);
+                  setEditedTaskListId(task.taskListId || '');
                   setIsEditing(false);
                 }}
-                className="px-2 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition shrink-0"
+                className="px-2 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition shrink-0 cursor-pointer"
               >
                 Cancel
               </button>
+            </div>
+
+            {/* Options Row: Category/Priority toggles & Move to another Task List */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Category enable/disable toggles in edit mode */}
+              <div className="flex items-center gap-1 shrink-0 bg-zinc-100 dark:bg-zinc-800/70 p-1 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                <span className="text-[10px] uppercase font-bold text-zinc-400 px-1">Tags:</span>
+                {ALL_CATEGORIES.map((cat) => {
+                  const isEnabled = editedCategories.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        if (isEnabled) {
+                          setEditedCategories(editedCategories.filter((c) => c !== cat));
+                        } else {
+                          setEditedCategories([...editedCategories, cat]);
+                        }
+                      }}
+                      className={`px-1.5 py-0.5 text-xs font-mono font-bold rounded border transition-all cursor-pointer ${
+                        isEnabled
+                          ? getCategoryActiveBadgeClass(cat)
+                          : 'text-zinc-400 dark:text-zinc-500 border-transparent hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {isEnabled ? `[${cat}]` : cat}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Move to another Task List Selector */}
+              {availableLists && availableLists.length > 0 && (
+                <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/70 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs">
+                  <FolderInput className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 shrink-0">
+                    Move to list:
+                  </span>
+                  <select
+                    value={editedTaskListId}
+                    onChange={(e) => setEditedTaskListId(e.target.value)}
+                    className="bg-transparent text-xs font-semibold text-zinc-800 dark:text-zinc-200 focus:outline-none cursor-pointer py-0.5 pr-1 max-w-[150px] sm:max-w-[200px] truncate"
+                    title="Choose a destination task list to move this task into"
+                  >
+                    {availableLists.map((l) => (
+                      <option
+                        key={l._id}
+                        value={l._id}
+                        className="bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                      >
+                        {l.title} {l._id === task.taskListId ? '(Current)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {editedTaskListId && editedTaskListId !== task.taskListId && (
+                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-900/60 shrink-0">
+                      Moves on save
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Tag Editor in edit mode */}

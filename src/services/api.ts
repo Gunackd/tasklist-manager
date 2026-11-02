@@ -209,6 +209,7 @@ export const api = {
       order: number;
       categories: TaskCategory[];
       category: TaskCategory;
+      taskListId: string;
     }>
   ) {
     return request<Task>(`/api/tasks/${id}`, {

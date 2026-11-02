@@ -101,9 +101,13 @@ export const ListDetail: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await api.getListById(id);
+      const [data, listsData] = await Promise.all([
+        api.getListById(id),
+        api.getLists(),
+      ]);
       setList(data);
       setTasks(data.tasks || []);
+      setAllLists(listsData);
       if (searchParams.get('randomize') === 'true') {
         setRandomModalOpen(true);
       }
@@ -210,18 +214,40 @@ export const ListDetail: React.FC = () => {
     }
   };
 
-  // Inline update task (title, inProgress, categories, tags)
+  // Inline update task (title, inProgress, categories, tags, taskListId)
   const handleUpdateTask = async (
     taskId: string,
-    updates: { title?: string; inProgress?: boolean; categories?: TaskCategory[]; category?: TaskCategory; tags?: string[] }
+    updates: {
+      title?: string;
+      inProgress?: boolean;
+      categories?: TaskCategory[];
+      category?: TaskCategory;
+      tags?: string[];
+      taskListId?: string;
+    }
   ) => {
-    setTasks((prev) =>
-      prev.map((t) => (t._id === taskId ? { ...t, ...updates } : t))
-    );
+    const isMovingList = Boolean(updates.taskListId && updates.taskListId !== id);
+    const targetList = isMovingList ? allLists.find((l) => l._id === updates.taskListId) : null;
+
+    if (isMovingList) {
+      // Optimistically remove from current list view
+      setTasks((prev) => prev.filter((t) => t._id !== taskId));
+      showToast(`Task moved to "${targetList?.title || 'selected list'}"`);
+    } else {
+      setTasks((prev) =>
+        prev.map((t) => (t._id === taskId ? { ...t, ...updates } : t))
+      );
+    }
+
     try {
       await api.updateTask(taskId, updates);
+      if (isMovingList) {
+        api.getLists().then(setAllLists).catch(() => {});
+      }
     } catch (err: any) {
       console.error('Failed to update task:', err);
+      fetchListDetails();
+      showToast('Failed to update task: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -753,6 +779,7 @@ export const ListDetail: React.FC = () => {
                 task={task}
                 index={index}
                 totalTasks={filteredTasks.length}
+                availableLists={allLists}
                 onToggle={handleToggleTask}
                 onToggleProgress={handleToggleProgress}
                 onUpdateTitle={handleUpdateTitle}

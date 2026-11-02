@@ -283,10 +283,39 @@ export const Dashboard: React.FC = () => {
 
   const handleUpdateCategoryTask = async (
     taskId: string,
-    updates: { title?: string; categories?: TaskCategory[]; category?: TaskCategory }
+    updates: {
+      title?: string;
+      categories?: TaskCategory[];
+      category?: TaskCategory;
+      tags?: string[];
+      taskListId?: string;
+    }
   ) => {
+    let targetListInfo: { title: string; color?: string } | undefined;
+    if (updates.taskListId) {
+      const targetList = lists.find((l) => l._id === updates.taskListId);
+      if (targetList) {
+        targetListInfo = { title: targetList.title, color: targetList.color };
+      }
+    }
+
     setCategoryTasks((prev) => {
-      const updated = prev.map((t) => (t._id === taskId ? { ...t, ...updates } : t));
+      const updated = prev.map((t) => {
+        if (t._id === taskId) {
+          return {
+            ...t,
+            ...updates,
+            ...(targetListInfo
+              ? {
+                  taskListTitle: targetListInfo.title,
+                  taskListColor: targetListInfo.color,
+                  taskListId: updates.taskListId!,
+                }
+              : {}),
+          };
+        }
+        return t;
+      });
       const filtered =
         selectedCategories.length > 0 && updates.categories
           ? updated.filter((t) =>
@@ -306,8 +335,15 @@ export const Dashboard: React.FC = () => {
       setPickedRandomTask((prev) => (prev ? { ...prev, ...updates } : null));
     }
 
+    if (targetListInfo) {
+      showToast(`Task moved to "${targetListInfo.title}"`);
+    }
+
     try {
       await api.updateTask(taskId, updates);
+      if (updates.taskListId) {
+        api.getLists().then(setLists).catch(() => {});
+      }
     } catch (err) {
       console.error('Failed to update task:', err);
     }
@@ -802,6 +838,7 @@ export const Dashboard: React.FC = () => {
                           task={task}
                           index={idx}
                           totalTasks={group.tasks.length}
+                          availableLists={lists}
                           onToggle={handleToggleCategoryTask}
                           onToggleProgress={handleToggleCategoryProgress}
                           onUpdateTitle={async (taskId, title) => handleUpdateCategoryTask(taskId, { title })}
